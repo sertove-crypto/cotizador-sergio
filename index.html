@@ -7,41 +7,39 @@
     <meta name="theme-color" content="#005F6B">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Cojines Sergio - Cotizador Profesional</title>
+    <title>Cojines Sergio - Cotizador</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         body { 
           font-family: 'Plus Jakarta Sans', sans-serif; 
-          -webkit-tap-highlight-color: transparent;
+          background-color: #F8FAFB;
+          margin: 0;
+          padding: 0;
         }
         .glass-dark {
           background: rgba(15, 23, 42, 0.95);
           backdrop-filter: blur(12px);
           -webkit-backdrop-filter: blur(12px);
         }
-        input[type="number"]::-webkit-inner-spin-button,
-        input[type="number"]::-webkit-outer-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
         .step-shadow {
           box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.05), 0 8px 10px -6px rgb(0 0 0 / 0.05);
         }
     </style>
-    <script type="importmap">
+<script type="importmap">
 {
   "imports": {
+    "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
     "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
     "vite": "https://esm.sh/vite@^7.3.1",
     "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
-<body class="bg-[#F8FAFB] text-slate-900 antialiased selection:bg-teal-100">
+<body>
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
