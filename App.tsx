@@ -1,328 +1,404 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { ProductType, FabricGroup, FoamType, QuoteData, CustomerData } from './types';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { ProductType, FabricGroup, FoamType, CustomerData, Fabric } from './types';
 import { 
   FABRIC_CATALOG,
   FOAM_MULTIPLIERS, 
   CUSHION_BASE_FACTOR,
   CUSHION_AREA_FACTOR,
   CUSHION_PREMIUM_SURCHARGE,
-  FURNITURE_VOLUME_FACTOR,
   FURNITURE_PREMIUM_FABRIC_ADD,
+  FURNITURE_VOLUME_FACTOR,
   BUSINESS_WHATSAPP
 } from './constants';
 
+interface MultiItem {
+  w: number;
+  h: number;
+  t: number;
+  qty: number;
+}
+
 const App: React.FC = () => {
-  // --- Estados ---
-  const [productType, setProductType] = useState<ProductType>(ProductType.CUSHION);
-  const [width, setWidth] = useState(45);
-  const [height, setHeight] = useState(45);
-  const [thickness, setThickness] = useState(10);
+  // --- Gestión de Catálogo ---
+  const [allFabrics, setAllFabrics] = useState<Record<FabricGroup, Fabric[]>>(FABRIC_CATALOG);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [zoomImage, setZoomImage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [editingFabric, setEditingFabric] = useState<{group: FabricGroup, index: number} | null>(null);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('sergio_fabrics_v3');
+    if (saved) {
+      try { setAllFabrics(JSON.parse(saved)); } catch (e) { console.error(e); }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('sergio_fabrics_v3', JSON.stringify(allFabrics));
+  }, [allFabrics]);
+
+  // --- Estados de la Interfaz ---
+  const [activeTab, setActiveTab] = useState<'cojin' | 'mueble'>('cojin');
+  
+  // Cojín único
+  const [cushionDim, setCushionDim] = useState({ w: 45, h: 45, qty: 1 });
+
+  // Múltiples asientos y espaldares (5 de cada uno)
+  const [seats, setSeats] = useState<MultiItem[]>(() => 
+    Array.from({ length: 5 }, (_, i) => ({ w: 60, h: 60, t: 10, qty: i === 0 ? 1 : 0 }))
+  );
+  const [backrests, setBackrests] = useState<MultiItem[]>(() => 
+    Array.from({ length: 5 }, () => ({ w: 60, h: 40, t: 8, qty: 0 }))
+  );
+
+  // Configuraciones de Calidad
   const [fabricGroup, setFabricGroup] = useState<FabricGroup>(FabricGroup.A);
   const [fabricName, setFabricName] = useState('');
   const [foamType, setFoamType] = useState<FoamType>(FoamType.STANDARD);
-  const [quantity, setQuantity] = useState(1);
   const [customer, setCustomer] = useState<CustomerData>({ name: '', phone: '' });
 
-  // --- Sincronizar tela al cambiar grupo ---
+  // Sincronización de tela al cambiar de gama
   useEffect(() => {
-    setFabricName(FABRIC_CATALOG[fabricGroup][0]);
-  }, [fabricGroup]);
+    const groupList = allFabrics[fabricGroup];
+    if (groupList.length > 0) {
+      const exists = groupList.some(f => f.name === fabricName);
+      if (!exists) setFabricName(groupList[0].name);
+    }
+  }, [fabricGroup, allFabrics]);
 
   // --- Lógica de Cotización ---
-  const quote = useMemo((): QuoteData => {
-    let unitPrice = 0;
-    let sizeLabel = "";
+  const calculation = useMemo(() => {
+    const summaryItems: { label: string; qty: number; total: number }[] = [];
+    let grandTotal = 0;
 
-    if (productType === ProductType.CUSHION) {
-      const area = width * height;
-      const basePrice = CUSHION_BASE_FACTOR + (area * CUSHION_AREA_FACTOR);
-      unitPrice = fabricGroup === FabricGroup.B ? basePrice + CUSHION_PREMIUM_SURCHARGE : basePrice;
-      unitPrice = Math.max(5, Math.round(unitPrice));
-      sizeLabel = `${width} x ${height} cm`;
+    if (activeTab === 'cojin') {
+      const area = cushionDim.w * cushionDim.h;
+      const base = CUSHION_BASE_FACTOR + (area * CUSHION_AREA_FACTOR);
+      let unitPrice = fabricGroup === FabricGroup.B ? base + CUSHION_PREMIUM_SURCHARGE : base;
+      unitPrice = Math.max(5, unitPrice); // Sin redondeo para precisión
+      const subtotal = unitPrice * cushionDim.qty;
+      
+      summaryItems.push({
+        label: `Cojín Decorativo`,
+        qty: cushionDim.qty,
+        total: subtotal
+      });
+      grandTotal = subtotal;
     } else {
-      const volume = width * height * thickness;
-      const basePrice = volume * FURNITURE_VOLUME_FACTOR;
-      unitPrice = basePrice * FOAM_MULTIPLIERS[foamType];
-      if (fabricGroup === FabricGroup.B) unitPrice += FURNITURE_PREMIUM_FABRIC_ADD;
-      unitPrice = Math.round(unitPrice * 100) / 100;
-      sizeLabel = `${width}x${height}x${thickness} cm`;
+      let totalSeatQty = 0;
+      let totalSeatPrice = 0;
+      let totalBackrestQty = 0;
+      let totalBackrestPrice = 0;
+
+      seats.forEach((item) => {
+        if (item.qty > 0) {
+          const volume = item.w * item.h * item.t;
+          const base = volume * FURNITURE_VOLUME_FACTOR;
+          let unitPrice = base * FOAM_MULTIPLIERS[foamType];
+          if (fabricGroup === FabricGroup.B) unitPrice += FURNITURE_PREMIUM_FABRIC_ADD;
+          totalSeatQty += item.qty;
+          totalSeatPrice += unitPrice * item.qty;
+        }
+      });
+
+      backrests.forEach((item) => {
+        if (item.qty > 0) {
+          const volume = item.w * item.h * item.t;
+          const base = volume * FURNITURE_VOLUME_FACTOR;
+          let unitPrice = base * FOAM_MULTIPLIERS[foamType];
+          if (fabricGroup === FabricGroup.B) unitPrice += FURNITURE_PREMIUM_FABRIC_ADD;
+          totalBackrestQty += item.qty;
+          totalBackrestPrice += unitPrice * item.qty;
+        }
+      });
+
+      if (totalSeatQty > 0) summaryItems.push({ label: 'Total Asientos', qty: totalSeatQty, total: totalSeatPrice });
+      if (totalBackrestQty > 0) summaryItems.push({ label: 'Total Espaldares', qty: totalBackrestQty, total: totalBackrestPrice });
+      
+      grandTotal = totalSeatPrice + totalBackrestPrice;
     }
 
-    const total = productType === ProductType.CUSHION 
-      ? Math.round(unitPrice * quantity)
-      : Math.round(unitPrice * quantity * 100) / 100;
+    return { summaryItems, grandTotal };
+  }, [activeTab, cushionDim, seats, backrests, fabricGroup, foamType]);
 
-    return {
-      type: productType,
-      width,
-      height,
-      thickness: productType === ProductType.CUSHION ? 0 : thickness,
-      cushionSizeLabel: sizeLabel,
-      fabricGroup,
-      fabricName,
-      foamType,
-      quantity,
-      unitPrice,
-      total
-    };
-  }, [productType, width, height, thickness, fabricGroup, fabricName, foamType, quantity]);
-
-  // --- Acciones ---
   const handleSendWhatsApp = () => {
     if (!customer.name || !customer.phone) return;
+    
+    let detailedMsg = "";
+    if (activeTab === 'cojin') {
+      detailedMsg = `• ${cushionDim.qty}x Cojín Decorativo (${cushionDim.w}x${cushionDim.h} cm)\n`;
+    } else {
+      seats.forEach(s => { if(s.qty > 0) detailedMsg += `• ${s.qty}x Asiento (${s.w}x${s.h}x${s.t} cm)\n`; });
+      backrests.forEach(b => { if(b.qty > 0) detailedMsg += `• ${b.qty}x Espaldar (${b.w}x${b.h}x${b.t} cm)\n`; });
+    }
 
-    const fabricTag = quote.fabricGroup === FabricGroup.A ? 'Estándar' : 'Premium';
-    const totalTxt = quote.type === ProductType.CUSHION ? quote.total.toFixed(0) : quote.total.toFixed(2);
-
-    const message = `🧾 NUEVA COTIZACIÓN – COJINES SERGIO
-
-Producto: ${quote.type}
-Medidas: ${quote.cushionSizeLabel}
-Tela: ${fabricTag} – ${quote.fabricName}
-${quote.type !== ProductType.CUSHION ? `Espuma: ${quote.foamType}\n` : ''}Cantidad: ${quote.quantity}
-Total: $${totalTxt}
-
-----------------------------
-Cliente: ${customer.name}
-WhatsApp: ${customer.phone}
-----------------------------
-Cotizado desde la App – 2026`;
-
+    const fabricType = fabricGroup === FabricGroup.A ? 'Estándar' : 'Premium';
+    const message = `🧾 *NUEVA SOLICITUD DE COTIZACIÓN*\n\n*LÍNEA:* ${activeTab === 'cojin' ? 'Decoración' : 'Muebles'}\n\n*PRODUCTOS:*\n${detailedMsg}\n*DETALLES:* \n- Tela: ${fabricType} (${fabricName})\n${activeTab === 'mueble' ? `- Espuma: ${foamType}\n` : ''}\n💰 *TOTAL ESTIMADO: $${calculation.grandTotal.toFixed(2)}*\n\n----------------------------\n👤 *Cliente:* ${customer.name}\n📱 *WhatsApp:* ${customer.phone}\n----------------------------\n_Cotizado vía App_`;
+    
     window.open(`https://wa.me/${BUSINESS_WHATSAPP}?text=${encodeURIComponent(message)}`, '_blank');
   };
 
+  const updateMulti = (setter: React.Dispatch<React.SetStateAction<MultiItem[]>>, index: number, field: keyof MultiItem, val: number) => {
+    setter(prev => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: val };
+      return next;
+    });
+  };
+
+  const QuantitySelector = ({ qty, onChange }: { qty: number, onChange: (val: number) => void }) => (
+    <div className="flex bg-slate-100 p-1 rounded-xl items-center gap-2">
+      <button onClick={() => onChange(Math.max(0, qty - 1))} className="w-8 h-8 flex items-center justify-center font-black bg-white rounded-lg shadow-sm text-sm active:scale-90">-</button>
+      <span className="font-black text-xs w-3 text-center">{qty}</span>
+      <button onClick={() => onChange(qty + 1)} className="w-8 h-8 flex items-center justify-center font-black bg-white rounded-lg shadow-sm text-sm active:scale-90">+</button>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen pb-20">
-      {/* Header */}
-      <header className="bg-white/90 backdrop-blur-md border-b border-slate-100 py-5 px-6 sticky top-0 z-50">
+    <div className="min-h-screen pb-40 bg-[#F8FAFB]">
+      {/* INPUT OCULTO PARA SUBIR FOTOS */}
+      <input type="file" accept="image/*" ref={fileInputRef} className="hidden" onChange={(e) => {
+        const file = e.target.files?.[0];
+        if (!file || !editingFabric) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 600;
+            const scale = MAX_WIDTH / img.width;
+            canvas.width = MAX_WIDTH;
+            canvas.height = img.height * scale;
+            canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const newCatalog = { ...allFabrics };
+            newCatalog[editingFabric.group][editingFabric.index].image = canvas.toDataURL('image/jpeg', 0.8);
+            setAllFabrics(newCatalog);
+            setEditingFabric(null);
+          };
+          img.src = event.target?.result as string;
+        };
+        reader.readAsDataURL(file);
+      }} />
+
+      {/* HEADER */}
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 py-5 px-6 sticky top-0 z-50">
         <div className="max-w-md mx-auto flex items-center justify-between">
-          <div className="flex flex-col">
-            <h1 className="text-xl font-black text-[#005F6B] tracking-tight leading-none">Cojines Sergio</h1>
-            <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-[0.3em] mt-1">Calidad Profesional</span>
+          <div className="flex-1 pr-4">
+            <h1 className="text-lg font-black text-[#005F6B] leading-tight tracking-tight">Cojines y accesorios para el hogar</h1>
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-1">Cotizador Automático</p>
           </div>
-          <div className="bg-teal-50 p-2.5 rounded-2xl border border-teal-100">
-            <svg className="w-5 h-5 text-[#005F6B]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
-          </div>
+          <button onClick={() => setIsAdminOpen(true)} className="p-3 rounded-2xl bg-slate-50 text-slate-400 border border-slate-100 active:scale-95">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+          </button>
         </div>
       </header>
 
-      <main className="max-w-md mx-auto px-6 pt-6 pb-32 space-y-8">
-        
-        {/* PASO 1: Categoría */}
+      {/* PANEL ADMIN (SOLO VISIBLE AL TOCAR ENGRANAJE) */}
+      {isAdminOpen && (
+        <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="max-w-md mx-auto bg-white rounded-[2.5rem] p-8 shadow-2xl animate-in slide-in-from-bottom-10 duration-300">
+            <div className="flex justify-between items-center mb-8">
+              <h2 className="text-xl font-black text-slate-900">Configurar Catálogo</h2>
+              <button onClick={() => setIsAdminOpen(false)} className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-bold">×</button>
+            </div>
+            {(['A', 'B'] as FabricGroup[]).map(group => (
+              <div key={group} className="mb-10">
+                <div className="flex justify-between border-b-2 border-slate-50 pb-2 mb-4">
+                  <span className="text-[10px] font-black uppercase text-slate-400">Gama {group}</span>
+                  <button onClick={() => {
+                    const n = {...allFabrics}; 
+                    n[group] = [...n[group], { name: 'Nueva Tela', image: 'https://images.unsplash.com/photo-1544441893-675973e31985?w=200' }]; 
+                    setAllFabrics(n);
+                  }} className="text-[10px] font-bold text-[#005F6B]">+ AÑADIR TELA</button>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  {allFabrics[group].map((f, i) => (
+                    <div key={i} className="bg-slate-50 p-3 rounded-2xl relative group">
+                      <img src={f.image} className="w-full aspect-square object-cover rounded-xl mb-3" />
+                      <button onClick={() => { setEditingFabric({group, index: i}); fileInputRef.current?.click(); }} className="absolute top-4 right-4 bg-white/90 p-2 rounded-lg shadow-sm">📷</button>
+                      <input value={f.name} onChange={(e) => { const n = {...allFabrics}; n[group][i].name = e.target.value; setAllFabrics(n); }} className="w-full text-[10px] uppercase font-bold text-center bg-transparent border-none outline-none" />
+                      <button onClick={() => { if(confirm('¿Eliminar?')){const n={...allFabrics}; n[group].splice(i,1); setAllFabrics(n);} }} className="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center shadow-lg">×</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <main className="max-w-md mx-auto px-6 pt-6 space-y-10">
+        {/* TABS PRINCIPALES */}
+        <div className="bg-white p-1.5 rounded-[2.2rem] border border-slate-100 flex step-shadow">
+          <button onClick={() => setActiveTab('cojin')} className={`flex-1 py-4 rounded-[1.8rem] text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'cojin' ? 'bg-[#005F6B] text-white shadow-xl shadow-teal-900/20' : 'text-slate-400 opacity-60'}`}>Cojín Decorativo</button>
+          <button onClick={() => setActiveTab('mueble')} className={`flex-1 py-4 rounded-[1.8rem] text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === 'mueble' ? 'bg-[#005F6B] text-white shadow-xl shadow-teal-900/20' : 'text-slate-400 opacity-60'}`}>Asiento y Espaldar</button>
+        </div>
+
+        {/* PASO 1: MEDIDAS */}
         <section className="space-y-4">
           <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-2">
             <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[9px]">1</span>
-            ¿Qué deseas cotizar?
+            Configurar Medidas (cm)
           </label>
-          <div className="grid grid-cols-3 bg-white p-1.5 rounded-2xl border border-slate-100 step-shadow">
-            {[ProductType.CUSHION, ProductType.SEAT, ProductType.BACKREST].map(t => (
-              <button
-                key={t}
-                onClick={() => setProductType(t)}
-                className={`py-3 rounded-xl text-[10px] font-bold transition-all uppercase tracking-tighter active:scale-95 flex items-center justify-center text-center leading-tight min-h-[54px] ${
-                  productType === t ? 'bg-[#005F6B] text-white shadow-lg shadow-teal-900/20' : 'text-slate-400'
-                }`}
-              >
-                {t === ProductType.CUSHION ? (
-                  <span>COJÍN<br/>DECORATIVO</span>
-                ) : (
-                  <span>{t}</span>
-                )}
-              </button>
-            ))}
-          </div>
+
+          {activeTab === 'cojin' ? (
+            <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-xl space-y-8">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <span className="text-[9px] font-black text-slate-300 uppercase ml-1">Ancho</span>
+                  <input type="number" value={cushionDim.w} onChange={(e) => setCushionDim(p => ({...p, w: Number(e.target.value)}))} className="w-full px-5 py-5 bg-slate-50 rounded-2xl text-base font-black border-2 border-transparent focus:border-[#005F6B] outline-none" />
+                </div>
+                <div className="space-y-2">
+                  <span className="text-[9px] font-black text-slate-300 uppercase ml-1">Alto</span>
+                  <input type="number" value={cushionDim.h} onChange={(e) => setCushionDim(p => ({...p, h: Number(e.target.value)}))} className="w-full px-5 py-5 bg-slate-50 rounded-2xl text-base font-black border-2 border-transparent focus:border-[#005F6B] outline-none" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between pt-6 border-t border-slate-50">
+                <span className="text-[10px] font-black text-slate-400 uppercase">Cantidad</span>
+                <QuantitySelector qty={cushionDim.qty} onChange={(val) => setCushionDim(p => ({...p, qty: val}))} />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-8 animate-in fade-in duration-300">
+              {/* TABLA DE ASIENTOS */}
+              <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-xl">
+                <span className="text-[11px] font-black text-[#005F6B] uppercase block mb-6 px-2">Lista de Asientos</span>
+                <div className="grid grid-cols-4 gap-2 mb-3 px-1 text-center">
+                  {['Ancho', 'Alto', 'Espesor', 'Cant.'].map(h => <span key={h} className="text-[8px] font-black text-slate-400 uppercase">{h}</span>)}
+                </div>
+                <div className="space-y-3">
+                  {seats.map((s, i) => (
+                    <div key={`s-${i}`} className={`flex items-center gap-2 p-2 rounded-2xl ${s.qty > 0 ? 'bg-teal-50/50 ring-1 ring-teal-100' : 'bg-slate-50'}`}>
+                      <input type="number" value={s.w} onChange={(e) => updateMulti(setSeats, i, 'w', Number(e.target.value))} className="w-full bg-white rounded-lg py-2 text-center text-xs font-bold shadow-sm focus:ring-1 focus:ring-[#005F6B] outline-none" />
+                      <input type="number" value={s.h} onChange={(e) => updateMulti(setSeats, i, 'h', Number(e.target.value))} className="w-full bg-white rounded-lg py-2 text-center text-xs font-bold shadow-sm focus:ring-1 focus:ring-[#005F6B] outline-none" />
+                      <input type="number" value={s.t} onChange={(e) => updateMulti(setSeats, i, 't', Number(e.target.value))} className="w-full bg-white rounded-lg py-2 text-center text-xs font-bold shadow-sm focus:ring-1 focus:ring-[#005F6B] outline-none" />
+                      <QuantitySelector qty={s.qty} onChange={(val) => updateMulti(setSeats, i, 'qty', val)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* TABLA DE ESPALDARES */}
+              <div className="bg-white rounded-[2.5rem] p-6 border border-slate-100 shadow-xl">
+                <span className="text-[11px] font-black text-[#005F6B] uppercase block mb-6 px-2">Lista de Espaldares</span>
+                <div className="grid grid-cols-4 gap-2 mb-3 px-1 text-center">
+                  {['Ancho', 'Alto', 'Espesor', 'Cant.'].map(h => <span key={h} className="text-[8px] font-black text-slate-400 uppercase">{h}</span>)}
+                </div>
+                <div className="space-y-3">
+                  {backrests.map((b, i) => (
+                    <div key={`b-${i}`} className={`flex items-center gap-2 p-2 rounded-2xl ${b.qty > 0 ? 'bg-teal-50/50 ring-1 ring-teal-100' : 'bg-slate-50'}`}>
+                      <input type="number" value={b.w} onChange={(e) => updateMulti(setBackrests, i, 'w', Number(e.target.value))} className="w-full bg-white rounded-lg py-2 text-center text-xs font-bold shadow-sm focus:ring-1 focus:ring-[#005F6B] outline-none" />
+                      <input type="number" value={b.h} onChange={(e) => updateMulti(setBackrests, i, 'h', Number(e.target.value))} className="w-full bg-white rounded-lg py-2 text-center text-xs font-bold shadow-sm focus:ring-1 focus:ring-[#005F6B] outline-none" />
+                      <input type="number" value={b.t} onChange={(e) => updateMulti(setBackrests, i, 't', Number(e.target.value))} className="w-full bg-white rounded-lg py-2 text-center text-xs font-bold shadow-sm focus:ring-1 focus:ring-[#005F6B] outline-none" />
+                      <QuantitySelector qty={b.qty} onChange={(val) => updateMulti(setBackrests, i, 'qty', val)} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </section>
 
-        {/* PASO 2: Medidas y Materiales */}
-        <section className="space-y-4">
+        {/* PASO 2: TELA Y ESPUMA */}
+        <section className="bg-white rounded-[2.5rem] p-9 border border-slate-100 shadow-xl space-y-8">
           <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-2">
             <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[9px]">2</span>
-            Configura tu producto
+            Materiales y Acabados
           </label>
-          
-          <div className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-xl shadow-slate-200/50 space-y-8">
-            
-            {/* Medidas */}
-            <div className={`grid ${productType === ProductType.CUSHION ? 'grid-cols-2' : 'grid-cols-3'} gap-4`}>
-              {[
-                { l: 'Ancho', v: width, s: setWidth },
-                { l: 'Alto', v: height, s: setHeight },
-                ...(productType !== ProductType.CUSHION ? [{ l: 'Fondo', v: thickness, s: setThickness }] : [])
-              ].map(dim => (
-                <div key={dim.l} className="space-y-2">
-                  <span className="text-[9px] font-black text-slate-400 uppercase ml-1">{dim.l} (cm)</span>
-                  <div className="relative group">
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={dim.v}
-                      onChange={(e) => dim.s(Number(e.target.value))}
-                      className="w-full pl-3 pr-8 py-4 bg-slate-50 rounded-2xl text-sm font-black text-slate-900 focus:bg-white border-2 border-transparent focus:border-[#005F6B] transition-all outline-none"
-                    />
-                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col">
-                      <button onClick={() => dim.s(dim.v + 1)} className="p-1 text-slate-300 hover:text-[#005F6B]"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z"/></svg></button>
-                      <button onClick={() => dim.s(Math.max(1, dim.v - 1))} className="p-1 text-slate-300 hover:text-[#005F6B]"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"/></svg></button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Espuma */}
-            {productType !== ProductType.CUSHION && (
-              <div className="space-y-3">
-                <span className="text-[10px] font-black text-slate-400 uppercase ml-1">Calidad de Espuma</span>
-                <div className="grid grid-cols-3 gap-2">
+          <div className="space-y-10">
+            {activeTab === 'mueble' && (
+              <div className="space-y-4">
+                <span className="text-[9px] font-black text-slate-400 uppercase block ml-1">Calidad de Espuma</span>
+                <div className="grid grid-cols-3 gap-2 p-1 bg-slate-50 rounded-2xl">
                   {[FoamType.ECONOMY, FoamType.STANDARD, FoamType.PREMIUM].map(f => (
-                    <button
-                      key={f}
-                      onClick={() => setFoamType(f)}
-                      className={`py-3 rounded-xl text-[9px] font-bold uppercase transition-all ${
-                        foamType === f ? 'bg-[#005F6B] text-white shadow-md' : 'bg-slate-50 text-slate-400'
-                      }`}
-                    >
-                      {f}
-                    </button>
+                    <button key={f} onClick={() => setFoamType(f)} className={`py-4 rounded-xl text-[9px] font-black transition-all ${foamType === f ? 'bg-white text-[#005F6B] shadow-sm' : 'text-slate-400'}`}>{f.toUpperCase()}</button>
                   ))}
                 </div>
               </div>
             )}
-
-            {/* Telas */}
-            <div className="space-y-6 pt-6 border-t border-slate-50">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black text-slate-400 uppercase">Calidad de Tela</span>
-                <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-100">
-                  {[FabricGroup.A, FabricGroup.B].map(g => (
-                    <button
-                      key={g}
-                      onClick={() => setFabricGroup(g)}
-                      className={`px-4 py-2 rounded-lg text-[10px] font-black transition-all ${
-                        fabricGroup === g ? 'bg-white text-[#005F6B] shadow-sm' : 'text-slate-400'
-                      }`}
-                    >
-                      {g === FabricGroup.A ? 'ESTÁNDAR' : 'PREMIUM'}
-                    </button>
+            <div className="space-y-5">
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] font-black text-slate-400 uppercase ml-1">Gama de Tela</span>
+                <div className="flex bg-slate-100 p-1.5 rounded-[1.2rem]">
+                  {(['A', 'B'] as FabricGroup[]).map(g => (
+                    <button key={g} onClick={() => setFabricGroup(g)} className={`px-6 py-2 rounded-xl text-[9px] font-black transition-all ${fabricGroup === g ? 'bg-white text-[#005F6B] shadow-sm' : 'text-slate-400'}`}>{g === FabricGroup.A ? 'ESTÁNDAR' : 'PREMIUM'}</button>
                   ))}
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <span className="text-[9px] font-black text-slate-400 uppercase ml-1">Colección Disponible</span>
-                <div className="relative">
-                  <select
-                    value={fabricName}
-                    onChange={(e) => setFabricName(e.target.value)}
-                    className="w-full p-4.5 bg-slate-50 rounded-2xl text-sm font-black text-slate-900 border-2 border-transparent focus:border-[#005F6B] appearance-none outline-none transition-all"
-                  >
-                    {FABRIC_CATALOG[fabricGroup].map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
+              <div className="flex gap-4 overflow-x-auto pb-4 -mx-2 px-2 no-scrollbar">
+                {allFabrics[fabricGroup].map((fabric) => (
+                  <div key={fabric.name} onClick={() => setFabricName(fabric.name)} className="flex-shrink-0 w-28 cursor-pointer active:scale-95">
+                    <div className={`aspect-square rounded-[1.8rem] overflow-hidden border-4 transition-all ${fabricName === fabric.name ? 'border-[#005F6B] scale-105' : 'border-transparent opacity-40'}`}>
+                      <img src={fabric.image} className="w-full h-full object-cover" />
+                    </div>
+                    <span className="text-[10px] font-black uppercase text-center block mt-3 text-slate-600">{fabric.name}</span>
                   </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* RESUMEN FINAL */}
+        <section className="relative">
+          <div className="relative glass-dark rounded-[3.5rem] p-10 shadow-2xl border border-white/10 overflow-hidden">
+            <div className="relative z-10 space-y-6">
+              <div className="space-y-1">
+                <span className="text-[10px] font-black text-teal-400 uppercase tracking-widest">Resumen de Cotización</span>
+                <p className="text-2xl font-black text-white">{fabricName || '---'}</p>
+              </div>
+
+              <div className="space-y-3 border-t border-white/5 pt-6">
+                {calculation.summaryItems.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center text-xs text-white">
+                    <div className="flex flex-col">
+                      <span className="font-black">{item.label}</span>
+                      <span className="text-[10px] text-white/40">{item.qty} piezas en total</span>
+                    </div>
+                    <span className="font-black">${item.total.toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex justify-between items-end border-t border-white/10 pt-8">
+                <span className="text-[10px] font-black text-white/30 uppercase tracking-widest pb-2">Total Estimado</span>
+                <div className="flex items-baseline text-white">
+                  <span className="text-2xl font-black text-teal-400 mr-1">$</span>
+                  <span className="text-6xl font-black tracking-tighter tabular-nums">
+                    {Math.floor(calculation.grandTotal)}
+                  </span>
+                  <span className="text-2xl font-black opacity-40">
+                    .{(calculation.grandTotal % 1).toFixed(2).split('.')[1]}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* RESUMEN DE PEDIDO (TARJETA OSCURA) */}
-        <section className="relative px-1">
-          <div className="absolute -inset-2 bg-gradient-to-tr from-[#005F6B] to-emerald-500 rounded-[3rem] blur-2xl opacity-10 pointer-events-none"></div>
-          <div className="relative glass-dark rounded-[2.8rem] p-9 shadow-2xl border border-white/10 overflow-hidden">
-            <div className="absolute -top-10 -right-10 w-40 h-40 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
-            
-            <div className="flex justify-between items-start mb-10 relative z-20">
-              <div className="space-y-1.5 pr-2">
-                <span className="text-[10px] font-black text-teal-400 uppercase tracking-[0.4em]">Cantidad</span>
-                <p className="text-lg font-bold text-white tracking-tight leading-none">
-                  {fabricName} ({fabricGroup === FabricGroup.A ? 'Estándar' : 'Premium'})
-                </p>
-                <p className="text-[10px] text-white/40 font-medium">{quote.cushionSizeLabel}</p>
-              </div>
-              
-              {/* Controles de cantidad mejorados */}
-              <div className="flex bg-white/10 p-1.5 rounded-2xl items-center gap-1 border border-white/20 relative z-30">
-                 <button 
-                  type="button"
-                  onClick={(e) => { e.preventDefault(); setQuantity(Math.max(1, quantity - 1)); }} 
-                  className="w-12 h-12 flex items-center justify-center text-white font-black text-2xl hover:bg-white/10 active:scale-90 transition-all rounded-xl cursor-pointer"
-                  style={{ touchAction: 'manipulation' }}
-                 >
-                   –
-                 </button>
-                 <span className="text-xl font-black text-white min-w-[2.5rem] text-center select-none">{quantity}</span>
-                 <button 
-                  type="button"
-                  onClick={(e) => { e.preventDefault(); setQuantity(quantity + 1); }} 
-                  className="w-12 h-12 flex items-center justify-center text-white font-black text-2xl hover:bg-white/10 active:scale-90 transition-all rounded-xl cursor-pointer"
-                  style={{ touchAction: 'manipulation' }}
-                 >
-                   +
-                 </button>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-end border-t border-white/10 pt-8 relative z-20">
-              <div className="space-y-1">
-                <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">Total a pagar</span>
-              </div>
-              <div className="flex items-baseline gap-1 text-white">
-                <span className="text-2xl font-black text-teal-400 drop-shadow-md">$</span>
-                <span className="text-6xl font-black tracking-tighter drop-shadow-2xl">
-                  {quote.type === ProductType.CUSHION ? quote.total.toFixed(0) : quote.total.toFixed(2)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* PASO 3: Datos de Cliente */}
-        <section className="space-y-4">
-          <label className="text-[10px] font-black uppercase text-slate-400 tracking-[0.2em] flex items-center gap-2">
+        {/* CONTACTO */}
+        <section className="bg-white rounded-[2.5rem] p-10 shadow-xl space-y-5">
+          <label className="text-[10px] font-black uppercase text-slate-400 flex items-center gap-2">
             <span className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[9px]">3</span>
-            Tu información
+            Tus Datos
           </label>
-          <div className="bg-white rounded-[2rem] p-7 border border-slate-100 shadow-xl shadow-slate-200/40 space-y-4">
-            <input
-              type="text"
-              placeholder="Nombre completo"
-              value={customer.name}
-              onChange={(e) => setCustomer({...customer, name: e.target.value})}
-              className="w-full p-4.5 bg-slate-50 rounded-2xl text-sm font-black focus:bg-white border-2 border-[#005F6B]/0 focus:border-[#005F6B] outline-none transition-all placeholder:text-slate-300"
-            />
-            <input
-              type="tel"
-              placeholder="Número de celular"
-              value={customer.phone}
-              onChange={(e) => setCustomer({...customer, phone: e.target.value})}
-              className="w-full p-4.5 bg-slate-50 rounded-2xl text-sm font-black focus:bg-white border-2 border-[#005F6B]/0 focus:border-[#005F6B] outline-none transition-all placeholder:text-slate-300"
-            />
+          <div className="space-y-4">
+            <input type="text" placeholder="Nombre completo" value={customer.name} onChange={(e) => setCustomer({...customer, name: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl text-sm font-black focus:border-[#005F6B] outline-none transition-all" />
+            <input type="tel" placeholder="Celular" value={customer.phone} onChange={(e) => setCustomer({...customer, phone: e.target.value})} className="w-full p-5 bg-slate-50 rounded-2xl text-sm font-black focus:border-[#005F6B] outline-none transition-all" />
           </div>
         </section>
       </main>
 
-      {/* Botón WhatsApp Fijo */}
-      <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-xl border-t border-slate-50 z-[60]">
-        <div className="max-w-md mx-auto">
-          <button
-            onClick={handleSendWhatsApp}
-            disabled={!customer.name || !customer.phone}
-            className={`w-full py-5 rounded-[2rem] font-black text-sm uppercase tracking-[0.2em] flex items-center justify-center gap-3 transition-all transform active:scale-[0.96] shadow-2xl ${
-              customer.name && customer.phone 
-              ? 'bg-[#25D366] text-white shadow-green-500/30' 
-              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-            }`}
-          >
-            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .004 5.411.002 12.048a11.811 11.811 0 001.592 5.952L0 24l6.101-1.6c1.854 1.011 3.96 1.543 6.1 1.543h.005c6.634 0 12.043-5.411 12.045-12.048a11.79 11.79 0 00-3.417-8.473z"/>
-            </svg>
-            Solicitar vía WhatsApp
-          </button>
-        </div>
+      {/* BOTÓN WHATSAPP */}
+      <div className="fixed bottom-0 left-0 right-0 p-6 bg-white/80 backdrop-blur-xl border-t border-slate-50 z-[60] flex justify-center">
+        <button 
+          onClick={handleSendWhatsApp}
+          disabled={!customer.name || !customer.phone || calculation.grandTotal === 0}
+          className="w-full max-w-md py-6 rounded-[2.5rem] bg-[#25D366] text-white font-black text-sm uppercase tracking-widest shadow-2xl active:scale-95 disabled:grayscale disabled:opacity-50 transition-all"
+        >
+          ENVIAR POR WHATSAPP
+        </button>
       </div>
     </div>
   );
