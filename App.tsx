@@ -24,7 +24,6 @@ const App: React.FC = () => {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'cojin' | 'mueble'>('cojin');
   
-  // Persistencia de datos del catálogo maestro
   useEffect(() => {
     const saved = localStorage.getItem('sergio_fabrics_v3');
     if (saved) {
@@ -36,7 +35,6 @@ const App: React.FC = () => {
     localStorage.setItem('sergio_fabrics_v3', JSON.stringify(allFabrics));
   }, [allFabrics]);
 
-  // Items iniciales
   const [cushionItems, setCushionItems] = useState<MultiItem[]>(() => 
     Array.from({ length: 3 }, () => ({ w: 40, h: 40, t: 0, qty: 0 }))
   );
@@ -47,23 +45,15 @@ const App: React.FC = () => {
     Array.from({ length: 5 }, () => ({ w: 50, h: 40, t: 8, qty: 0 }))
   );
 
-  // VALORES POR DEFECTO AL INICIAR: Siempre Estándar
-  const [fabricGroup, setFabricGroup] = useState<FabricGroup>(FabricGroup.A);
-  const [fabricName, setFabricName] = useState(FABRIC_CATALOG[FabricGroup.A][0].name);
+  // ESTADOS INDEPENDIENTES DE GAMA POR CATEGORÍA
+  const [cushionFabricGroup, setCushionFabricGroup] = useState<FabricGroup>(FabricGroup.A);
+  const [muebleFabricGroup, setMuebleFabricGroup] = useState<FabricGroup>(FabricGroup.A);
+  
   const [foamType, setFoamType] = useState<FoamType>(FoamType.STANDARD);
   const [customer, setCustomer] = useState<CustomerData>({ name: '', phone: '' });
 
-  // Sincronización de nombre de tela
-  useEffect(() => {
-    const groupList = allFabrics[fabricGroup];
-    if (groupList.length > 0) {
-      const exists = groupList.some(f => f.name === fabricName);
-      if (!exists) setFabricName(groupList[0].name);
-    }
-  }, [fabricGroup, allFabrics, fabricName]);
-
   const calculation = useMemo(() => {
-    const summaryItems: { label: string; qty: number; total: number }[] = [];
+    const summaryItems: { label: string; qty: number; total: number; group: FabricGroup }[] = [];
     let grandTotal = 0;
 
     cushionItems.forEach((item) => {
@@ -71,9 +61,9 @@ const App: React.FC = () => {
         const area = item.w * item.h;
         let basePrice = CUSHION_BASE_FACTOR + (area * CUSHION_AREA_FACTOR);
         if (item.w >= 50 && item.h >= 50) basePrice = Math.max(basePrice, 10.00);
-        const unitPrice = fabricGroup === FabricGroup.B ? basePrice + CUSHION_PREMIUM_SURCHARGE : basePrice;
+        const unitPrice = cushionFabricGroup === FabricGroup.B ? basePrice + CUSHION_PREMIUM_SURCHARGE : basePrice;
         const lineTotal = Number((unitPrice * item.qty).toFixed(2));
-        summaryItems.push({ label: `Cojín Dec. ${item.w}x${item.h}`, qty: item.qty, total: lineTotal });
+        summaryItems.push({ label: `Cojín Dec. ${item.w}x${item.h}`, qty: item.qty, total: lineTotal, group: cushionFabricGroup });
         grandTotal += lineTotal;
       }
     });
@@ -82,9 +72,9 @@ const App: React.FC = () => {
       if (item.qty > 0 && item.w > 0 && item.h > 0 && item.t > 0) {
         const vol = item.w * item.h * item.t;
         let unitPrice = (vol * FURNITURE_VOLUME_FACTOR) * FOAM_MULTIPLIERS[foamType];
-        if (fabricGroup === FabricGroup.B) unitPrice += FURNITURE_PREMIUM_FABRIC_ADD;
+        if (muebleFabricGroup === FabricGroup.B) unitPrice += FURNITURE_PREMIUM_FABRIC_ADD;
         const lineTotal = Number((unitPrice * item.qty).toFixed(2));
-        summaryItems.push({ label: `Asiento ${item.w}x${item.h}x${item.t}`, qty: item.qty, total: lineTotal });
+        summaryItems.push({ label: `Asiento ${item.w}x${item.h}x${item.t}`, qty: item.qty, total: lineTotal, group: muebleFabricGroup });
         grandTotal += lineTotal;
       }
     });
@@ -93,22 +83,28 @@ const App: React.FC = () => {
       if (item.qty > 0 && item.w > 0 && item.h > 0 && item.t > 0) {
         const vol = item.w * item.h * item.t;
         let unitPrice = (vol * FURNITURE_VOLUME_FACTOR) * FOAM_MULTIPLIERS[foamType];
-        if (fabricGroup === FabricGroup.B) unitPrice += FURNITURE_PREMIUM_FABRIC_ADD;
+        if (muebleFabricGroup === FabricGroup.B) unitPrice += FURNITURE_PREMIUM_FABRIC_ADD;
         const lineTotal = Number((unitPrice * item.qty).toFixed(2));
-        summaryItems.push({ label: `Espaldar ${item.w}x${item.h}x${item.t}`, qty: item.qty, total: lineTotal });
+        summaryItems.push({ label: `Espaldar ${item.w}x${item.h}x${item.t}`, qty: item.qty, total: lineTotal, group: muebleFabricGroup });
         grandTotal += lineTotal;
       }
     });
 
     return { summaryItems, grandTotal: Number(grandTotal.toFixed(2)) };
-  }, [cushionItems, seats, backrests, fabricGroup, foamType]);
+  }, [cushionItems, seats, backrests, cushionFabricGroup, muebleFabricGroup, foamType]);
 
   const handleSendWhatsApp = () => {
     if (!customer.name || !customer.phone) return;
     let det = "";
-    calculation.summaryItems.forEach(item => det += `• ${item.qty}x ${item.label} ($${item.total.toFixed(2)})\n`);
-    const gamaText = fabricGroup === FabricGroup.B ? 'Premium' : 'Estándar';
-    const msg = `🧾 *COTIZACIÓN ESTIMADA*\n\n*PRODUCTOS:*\n${det}\n*TELA:* Gama ${gamaText}\n*ESPUMA:* ${activeTab === 'mueble' ? foamType : 'N/A'}\n\n💰 *TOTAL: $${calculation.grandTotal.toFixed(2)}*\n\n👤 *Cliente:* ${customer.name}\n📱 *WhatsApp:* ${customer.phone}`;
+    calculation.summaryItems.forEach(item => {
+      const g = item.group === FabricGroup.B ? 'Premium' : 'Estándar';
+      det += `• ${item.qty}x ${item.label} [Gama ${g}] ($${item.total.toFixed(2)})\n`;
+    });
+    
+    const hasFurniture = seats.some(s=>s.qty>0) || backrests.some(b=>b.qty>0);
+    const foamText = hasFurniture ? `\n*CALIDAD ESPONJA:* ${foamType}` : '';
+    
+    const msg = `🧾 *COTIZACIÓN ESTIMADA*\n\n*PRODUCTOS:*\n${det}${foamText}\n\n💰 *TOTAL: $${calculation.grandTotal.toFixed(2)}*\n\n👤 *Cliente:* ${customer.name}\n📱 *WhatsApp:* ${customer.phone}`;
     window.open(`https://wa.me/${BUSINESS_WHATSAPP}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
@@ -124,6 +120,9 @@ const App: React.FC = () => {
       <button onClick={() => onChange(qty + 1)} className="w-8 h-8 flex items-center justify-center font-black bg-white rounded-lg shadow-sm text-lg active:scale-90 text-[#005F6B]">+</button>
     </div>
   );
+
+  const currentFabricGroup = activeTab === 'cojin' ? cushionFabricGroup : muebleFabricGroup;
+  const setFabricGroup = activeTab === 'cojin' ? setCushionFabricGroup : setMuebleFabricGroup;
 
   return (
     <div className="min-h-screen pb-44 bg-[#F8FAFB] font-sans animate-fade-in overflow-x-hidden">
@@ -167,7 +166,8 @@ const App: React.FC = () => {
           ) : (
             <div className="space-y-8">
               <div className="bg-white rounded-[3rem] p-6 shadow-xl border border-slate-50">
-                <span className="text-[11px] font-black text-[#005F6B] uppercase block mb-4 ml-3 tracking-[0.2em]">Asientos</span>
+                <span className="text-[11px] font-black text-[#005F6B] uppercase block mb-1 ml-3 tracking-[0.2em]">Asientos</span>
+                <p className="text-[9px] font-bold text-slate-400 uppercase ml-3 mb-4 tracking-wider">Largo x Ancho x Espesor</p>
                 <div className="space-y-4">
                   {seats.map((s, i) => (
                     <div key={i} className={`grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 p-3 rounded-[1.8rem] transition-all ${s.qty > 0 ? 'bg-teal-50 ring-2 ring-teal-500/20 shadow-sm' : 'bg-slate-50'}`}>
@@ -180,7 +180,8 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="bg-white rounded-[3rem] p-6 shadow-xl border border-slate-50">
-                <span className="text-[11px] font-black text-[#005F6B] uppercase block mb-4 ml-3 tracking-[0.2em]">Espaldares</span>
+                <span className="text-[11px] font-black text-[#005F6B] uppercase block mb-1 ml-3 tracking-[0.2em]">Espaldares</span>
+                <p className="text-[9px] font-bold text-slate-400 uppercase ml-3 mb-4 tracking-wider">Largo x Ancho x Espesor</p>
                 <div className="space-y-4">
                   {backrests.map((b, i) => (
                     <div key={i} className={`grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-2 p-3 rounded-[1.8rem] transition-all ${b.qty > 0 ? 'bg-teal-50 ring-2 ring-teal-500/20 shadow-sm' : 'bg-slate-50'}`}>
@@ -197,29 +198,36 @@ const App: React.FC = () => {
         </section>
 
         <section className="bg-white rounded-[3rem] p-10 shadow-xl border border-slate-50 space-y-10">
-          <label className="text-[11px] font-black uppercase text-slate-400 tracking-[0.25em] ml-3 block">{activeTab === 'mueble' ? '2. ESCOGER ESPONJA' : '2. Calidad de Acabado'}</label>
+          <label className="text-[11px] font-black uppercase text-slate-400 tracking-[0.25em] ml-3 block">
+            {activeTab === 'mueble' ? '2. CALIDAD DE ACABADO' : '2. Calidad de Acabado'}
+          </label>
           <div className="space-y-10">
             {activeTab === 'mueble' && (
-              <div className="grid grid-cols-3 gap-3 bg-slate-100 p-2 rounded-[2rem]">
-                {[FoamType.ECONOMY, FoamType.STANDARD, FoamType.PREMIUM].map(f => (
-                  <button key={f} onClick={()=>setFoamType(f)} className={`py-5 rounded-2xl text-[10px] font-black uppercase transition-all ${foamType===f ? 'bg-white text-[#005F6B] shadow-md scale-105' : 'text-slate-400'}`}>
-                    {f === FoamType.ECONOMY ? 'BÁSICA' : f === FoamType.STANDARD ? 'ESTÁNDAR' : 'PREMIUM'}
-                  </button>
-                ))}
+              <div className="space-y-6">
+                <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest block ml-2">Calidad de Esponja</span>
+                <div className="grid grid-cols-3 gap-3 bg-slate-100 p-2 rounded-[2rem]">
+                  {[FoamType.ECONOMY, FoamType.STANDARD, FoamType.PREMIUM].map(f => (
+                    <button key={f} onClick={()=>setFoamType(f)} className={`py-5 rounded-2xl text-[10px] font-black uppercase transition-all ${foamType===f ? 'bg-white text-[#005F6B] shadow-md scale-105' : 'text-slate-400'}`}>
+                      {f === FoamType.ECONOMY ? 'BÁSICA' : f === FoamType.STANDARD ? 'ESTÁNDAR' : 'PREMIUM'}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
-            <div className="flex justify-between items-center px-2">
-              <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest">Gama de Tela</span>
-              <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner">
+            
+            <div className="flex flex-col gap-4 px-2">
+              <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest block">Gama de Tela {activeTab === 'cojin' ? '(Cojines)' : '(Muebles)'}</span>
+              <div className="flex bg-slate-100 p-1.5 rounded-2xl shadow-inner w-full">
                 {(['A', 'B'] as FabricGroup[]).map(g => (
-                  <button key={g} onClick={()=>setFabricGroup(g)} className={`px-7 py-3 rounded-xl text-[10px] font-black transition-all ${fabricGroup===g ? 'bg-white text-[#005F6B] shadow-md' : 'text-slate-400'}`}>{g==='A'?'ESTÁNDAR':'PREMIUM'}</button>
+                  <button key={g} onClick={()=>setFabricGroup(g)} className={`flex-1 py-3 rounded-xl text-[10px] font-black transition-all ${currentFabricGroup===g ? 'bg-white text-[#005F6B] shadow-md' : 'text-slate-400'}`}>{g==='A'?'ESTÁNDAR':'PREMIUM'}</button>
                 ))}
               </div>
             </div>
+
             <div className="bg-[#005F6B]/5 p-6 rounded-3xl border border-[#005F6B]/10 text-center">
               <p className="text-[10px] font-black text-[#005F6B] uppercase tracking-widest leading-relaxed">
-                Has seleccionado <span className="underline decoration-2">Gama {fabricGroup === FabricGroup.A ? 'Estándar' : 'Premium'}</span>.<br/>
-                El precio se ajusta automáticamente según la calidad elegida.
+                Has seleccionado <span className="underline decoration-2">Gama {currentFabricGroup === FabricGroup.A ? 'Estándar' : 'Premium'}</span> para {activeTab === 'cojin' ? 'cojines decorativos' : 'asientos y espaldares'}.<br/>
+                Cada categoría mantiene su configuración de tela independiente.
               </p>
             </div>
           </div>
@@ -230,7 +238,8 @@ const App: React.FC = () => {
             <div className="relative z-10 space-y-12">
               <div className="space-y-2">
                 <span className="text-[11px] font-black text-teal-400 uppercase tracking-[0.4em] opacity-80">Resumen</span>
-                <p className="text-3xl font-black tracking-tight">{fabricGroup === FabricGroup.A ? 'Gama Estándar' : 'Gama Premium'}</p>
+                <p className="text-3xl font-black tracking-tight">Viendo: {activeTab === 'cojin' ? 'Cojines' : 'Muebles'}</p>
+                <span className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Gama {currentFabricGroup === FabricGroup.A ? 'Estándar' : 'Premium'} activa</span>
               </div>
               <div className="space-y-6 border-t border-white/10 pt-10">
                 {calculation.summaryItems.length > 0 ? (
@@ -238,7 +247,7 @@ const App: React.FC = () => {
                     <div key={idx} className="flex justify-between items-center animate-fade-in" style={{animationDelay: `${idx*0.1}s`}}>
                       <div className="flex flex-col gap-1">
                         <span className="text-lg font-black text-white/95 leading-none">{item.label}</span>
-                        <span className="text-[10px] text-white/30 uppercase font-black tracking-widest">{item.qty} piezas</span>
+                        <span className="text-[10px] text-white/30 uppercase font-black tracking-widest">{item.qty} piezas • Gama {item.group === FabricGroup.B ? 'Premium' : 'Estándar'}</span>
                       </div>
                       <span className="font-black text-xl text-teal-100">${item.total.toFixed(2)}</span>
                     </div>
