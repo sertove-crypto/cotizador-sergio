@@ -3,7 +3,8 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: ["principal"] # Coincide con tu rama 'principal'
+    branches: ["principal", "main", "master"] # Intentar con los nombres comunes
+  workflow_dispatch: # Esto permite darle al botón "Run workflow" manualmente en GitHub
 
 permissions:
   contents: read
