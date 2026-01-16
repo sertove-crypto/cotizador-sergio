@@ -27,6 +27,10 @@ export default function App() {
 
   // Estados de configuración
   const [cushionsFabricGroup, setCushionsFabricGroup] = useState<FabricGroup>(FabricGroup.A);
+  
+  // Estados para Muebles (Asientos y Espaldares)
+  const [furnitureFoamType, setFurnitureFoamType] = useState<FoamType>(FoamType.PREMIUM);
+  const [furnitureFabricGroup, setFurnitureFabricGroup] = useState<FabricGroup>(FabricGroup.A);
 
   const calculation = useMemo(() => {
     let items: any[] = [];
@@ -59,9 +63,14 @@ export default function App() {
       list.forEach(it => {
         if (it.qty > 0 && it.w > 0 && it.h > 0 && it.t > 0) {
           let vol = it.w * it.h * it.t;
-          let base = (vol * FURNITURE_VOLUME_FACTOR) * FOAM_MULTIPLIERS[FoamType.PREMIUM];
-          let unit = base + FURNITURE_PREMIUM_FABRIC_ADD;
-          items.push({ label: `${name} ${it.w}x${it.h}x${it.t} (Calidad Premium)`, qty: it.qty, sub: unit * it.qty });
+          let base = (vol * FURNITURE_VOLUME_FACTOR) * FOAM_MULTIPLIERS[furnitureFoamType];
+          let unit = base + (furnitureFabricGroup === FabricGroup.B ? FURNITURE_PREMIUM_FABRIC_ADD : 0);
+          
+          items.push({ 
+            label: `${name} ${it.w}x${it.h}x${it.t} (Esp. ${furnitureFoamType} / ${furnitureFabricGroup === FabricGroup.A ? 'Tela Estándar' : 'Tela Premium'})`, 
+            qty: it.qty, 
+            sub: unit * it.qty 
+          });
           grandTotal += unit * it.qty;
         }
       });
@@ -90,7 +99,7 @@ export default function App() {
     });
 
     return { items, total: grandTotal };
-  }, [cushions, seats, backrests, mattresses, customMattresses, cushionsFabricGroup]);
+  }, [cushions, seats, backrests, mattresses, customMattresses, cushionsFabricGroup, furnitureFoamType, furnitureFabricGroup]);
 
   const sendWhatsApp = () => {
     if (!customer.name || !customer.phone) return alert("Por favor ingresa tu nombre y número de teléfono");
@@ -225,20 +234,68 @@ export default function App() {
         </section>
 
         {/* Sección 2: Telas y Acabados */}
-        {activeTab !== 'colchoneta' && (
-          <section className="mt-16 space-y-8">
-            <h2 className="text-[10px] font-extrabold text-slate-400 letter-spacing-widest uppercase">2. TELA Y ACABADOS</h2>
-            <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50/50">
-              
-              {activeTab === 'cojin' ? (
-                /* Bloque para Cojines: Selección simplificada */
-                <div className="flex flex-col gap-4">
-                  <p className="text-[9px] font-bold text-slate-400 mb-2 uppercase tracking-widest text-center">Selecciona el tipo de tela</p>
+        <section className="mt-16 space-y-8">
+          <h2 className="text-[10px] font-extrabold text-slate-400 letter-spacing-widest uppercase">2. TELA Y ACABADOS</h2>
+          <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50/50">
+            
+            {activeTab === 'cojin' && (
+              /* Bloque para Cojines: Selección simplificada */
+              <div className="flex flex-col gap-4">
+                <p className="text-[9px] font-bold text-slate-400 mb-2 uppercase tracking-widest text-center">Selecciona el tipo de tela</p>
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={() => setCushionsFabricGroup(FabricGroup.A)}
+                    className={`w-full py-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center ${
+                      cushionsFabricGroup === FabricGroup.A 
+                      ? 'border-[#005f6b] bg-[#005f6b]/5 text-[#005f6b]' 
+                      : 'border-slate-100 bg-white text-slate-400'
+                    }`}
+                  >
+                    <span className="text-[11px] font-black uppercase tracking-widest">TELA TAPIZ ESTANDAR</span>
+                  </button>
+                  <button 
+                    onClick={() => setCushionsFabricGroup(FabricGroup.B)}
+                    className={`w-full py-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center ${
+                      cushionsFabricGroup === FabricGroup.B 
+                      ? 'border-[#005f6b] bg-[#005f6b]/5 text-[#005f6b]' 
+                      : 'border-slate-100 bg-white text-slate-400'
+                    }`}
+                  >
+                    <span className="text-[11px] font-black uppercase tracking-widest">TELA TAPIZ PREMIUM</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'mueble' && (
+              /* Bloque para Muebles (Asientos y Espaldares): Selección de Calidad */
+              <div className="space-y-10">
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 mb-4 uppercase tracking-widest text-center">Calidad de Esponja</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[FoamType.ECONOMY, FoamType.STANDARD, FoamType.PREMIUM].map((type) => (
+                      <button 
+                        key={type}
+                        onClick={() => setFurnitureFoamType(type)}
+                        className={`py-4 rounded-xl border-2 transition-all text-[9px] font-black uppercase tracking-widest ${
+                          furnitureFoamType === type 
+                          ? 'border-[#005f6b] bg-[#005f6b]/5 text-[#005f6b]' 
+                          : 'border-slate-100 bg-white text-slate-400'
+                        }`}
+                      >
+                        {type === FoamType.ECONOMY ? 'Básica' : type === FoamType.STANDARD ? 'Estándar' : 'Premium'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-[9px] font-bold text-slate-400 mb-4 uppercase tracking-widest text-center">Tipo de Tela</p>
                   <div className="flex flex-col gap-3">
                     <button 
-                      onClick={() => setCushionsFabricGroup(FabricGroup.A)}
+                      onClick={() => setFurnitureFabricGroup(FabricGroup.A)}
                       className={`w-full py-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center ${
-                        cushionsFabricGroup === FabricGroup.A 
+                        furnitureFabricGroup === FabricGroup.A 
                         ? 'border-[#005f6b] bg-[#005f6b]/5 text-[#005f6b]' 
                         : 'border-slate-100 bg-white text-slate-400'
                       }`}
@@ -246,9 +303,9 @@ export default function App() {
                       <span className="text-[11px] font-black uppercase tracking-widest">TELA TAPIZ ESTANDAR</span>
                     </button>
                     <button 
-                      onClick={() => setCushionsFabricGroup(FabricGroup.B)}
+                      onClick={() => setFurnitureFabricGroup(FabricGroup.B)}
                       className={`w-full py-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center ${
-                        cushionsFabricGroup === FabricGroup.B 
+                        furnitureFabricGroup === FabricGroup.B 
                         ? 'border-[#005f6b] bg-[#005f6b]/5 text-[#005f6b]' 
                         : 'border-slate-100 bg-white text-slate-400'
                       }`}
@@ -257,45 +314,47 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-              ) : (
-                /* Bloque para Muebles: Detalle de Calidad Fija */
-                <div className="space-y-6">
-                  <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-4">
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                        <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest mb-1">ESPONJA PREMIUM</h4>
-                        <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
-                          Utilizamos esponja de alta densidad para asegurar la firmeza y durabilidad necesaria en colchonetas
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="h-px bg-slate-200 w-full" />
+              </div>
+            )}
 
-                    <div className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-full bg-[#005f6b]/10 flex items-center justify-center flex-shrink-0">
-                        <svg className="w-5 h-5 text-[#005f6b]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                        </svg>
-                      </div>
-                      <div>
-                        <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest mb-1">MATERIAL SINTETICO DE ALTA CALIDAD</h4>
-                        <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
-                          Expandible impermeable ideal para el uso diario y fácil limpieza
-                        </p>
-                      </div>
+            {activeTab === 'colchoneta' && (
+              /* Bloque para Colchonetas: Detalle de Calidad Fija */
+              <div className="space-y-6">
+                <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest mb-1">ESPONJA PREMIUM</h4>
+                      <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
+                        Utilizamos esponja de alta densidad para asegurar la firmeza y durabilidad necesaria en colchonetas
+                      </p>
+                    </div>
+                  </div>
+                  
+                  <div className="h-px bg-slate-200 w-full" />
+
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-full bg-[#005f6b]/10 flex items-center justify-center flex-shrink-0">
+                      <svg className="w-5 h-5 text-[#005f6b]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest mb-1">MATERIAL SINTETICO DE ALTA CALIDAD</h4>
+                      <p className="text-[10px] font-bold text-slate-500 leading-relaxed">
+                        Expandible impermeable ideal para el uso diario y fácil limpieza
+                      </p>
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
-          </section>
-        )}
+              </div>
+            )}
+          </div>
+        </section>
 
         <section className="mt-16 mb-20 space-y-8">
           <div className="bg-[#005f6b] rounded-[2.5rem] p-10 text-white shadow-xl shadow-[#005f6b]/20">
