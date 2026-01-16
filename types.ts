@@ -1,8 +1,8 @@
-
 export enum ProductType {
   CUSHION = 'Cojín decorativo',
   SEAT = 'Asiento',
-  BACKREST = 'Espaldar'
+  BACKREST = 'Espaldar',
+  MATTRESS = 'Colchoneta'
 }
 
 export enum FabricGroup {
@@ -11,9 +11,14 @@ export enum FabricGroup {
 }
 
 export enum FoamType {
-  ECONOMY = 'Económica',
+  ECONOMY = 'Básica',
   STANDARD = 'Estándar',
   PREMIUM = 'Premium'
+}
+
+export interface Fabric {
+  name: string;
+  image: string;
 }
 
 export interface QuoteData {
