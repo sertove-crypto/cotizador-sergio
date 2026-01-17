@@ -28,8 +28,8 @@ export default function App() {
   // Estados de configuración
   const [cushionsFabricGroup, setCushionsFabricGroup] = useState<FabricGroup>(FabricGroup.A);
   
-  // Estados para Muebles (Asientos y Espaldares)
-  const [furnitureFoamType, setFurnitureFoamType] = useState<FoamType>(FoamType.PREMIUM);
+  // Estados para Muebles (Asientos y Espaldares) - Inician en ESTÁNDAR
+  const [furnitureFoamType, setFurnitureFoamType] = useState<FoamType>(FoamType.STANDARD);
   const [furnitureFabricGroup, setFurnitureFabricGroup] = useState<FabricGroup>(FabricGroup.A);
 
   const calculation = useMemo(() => {
@@ -42,7 +42,6 @@ export default function App() {
         let area = it.w * it.h;
         let base = CUSHION_BASE_FACTOR + (area * CUSHION_AREA_FACTOR);
         
-        // Ajuste: Si llega a 50x50cm (o más), el precio base es mínimo $10
         if (it.w >= 50 && it.h >= 50) {
           base = Math.max(base, 10.00);
         }
@@ -144,13 +143,13 @@ export default function App() {
 
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50/50">
             {activeTab === 'cojin' && (
-              <div className="space-y-8">
+              <div className="space-y-4">
                 <div>
                   <h3 className="text-[11px] font-extrabold text-[#005f6b] tracking-wider mb-1 uppercase">Cojines Decorativos</h3>
                   <p className="text-[8px] font-bold text-slate-300 letter-spacing-widest uppercase">Ancho x Alto</p>
                 </div>
                 {cushions.map((it, i) => (
-                  <div key={i} className="flex items-center gap-3">
+                  <div key={i} className={`flex items-center gap-3 p-3 rounded-2xl border transition-all ${it.qty > 0 ? 'bg-[#005f6b]/5 border-[#005f6b]/20' : 'border-transparent'}`}>
                     <input type="number" value={it.w || ''} placeholder="An" onChange={e=>{let n=[...cushions]; n[i].w=Number(e.target.value); setCushions(n)}} className="w-16 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-sm focus:border-[#005f6b] outline-none" />
                     <input type="number" value={it.h || ''} placeholder="Al" onChange={e=>{let n=[...cushions]; n[i].h=Number(e.target.value); setCushions(n)}} className="w-16 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-sm focus:border-[#005f6b] outline-none" />
                     <div className="flex-1" />
@@ -167,7 +166,7 @@ export default function App() {
                   <p className="text-[8px] font-bold text-slate-300 letter-spacing-widest uppercase">Largo x Ancho x Espesor</p>
                   <div className="mt-6 space-y-4">
                     {seats.map((it, i) => (
-                      <div key={i} className="flex items-center gap-2">
+                      <div key={i} className={`flex items-center gap-2 p-3 rounded-2xl border transition-all ${it.qty > 0 ? 'bg-[#005f6b]/5 border-[#005f6b]/20' : 'border-transparent'}`}>
                         <input type="number" value={it.w || ''} placeholder="L" title="Largo" onChange={e=>{let n=[...seats]; n[i].w=Number(e.target.value); setSeats(n)}} className="w-14 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-sm focus:border-[#005f6b] outline-none" />
                         <input type="number" value={it.h || ''} placeholder="An" title="Ancho" onChange={e=>{let n=[...seats]; n[i].h=Number(e.target.value); setSeats(n)}} className="w-14 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-sm focus:border-[#005f6b] outline-none" />
                         <input type="number" value={it.t || ''} placeholder="Es" title="Espesor" onChange={e=>{let n=[...seats]; n[i].t=Number(e.target.value); setSeats(n)}} className="w-14 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-sm focus:border-[#005f6b] outline-none" />
@@ -182,7 +181,7 @@ export default function App() {
                   <p className="text-[8px] font-bold text-slate-300 letter-spacing-widest uppercase">Largo x Ancho x Espesor</p>
                   <div className="mt-6 space-y-4">
                     {backrests.map((it, i) => (
-                      <div key={i} className="flex items-center gap-2">
+                      <div key={i} className={`flex items-center gap-2 p-3 rounded-2xl border transition-all ${it.qty > 0 ? 'bg-[#005f6b]/5 border-[#005f6b]/20' : 'border-transparent'}`}>
                         <input type="number" value={it.w || ''} placeholder="L" title="Largo" onChange={e=>{let n=[...backrests]; n[i].w=Number(e.target.value); setBackrests(n)}} className="w-14 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-sm focus:border-[#005f6b] outline-none" />
                         <input type="number" value={it.h || ''} placeholder="An" title="Ancho" onChange={e=>{let n=[...backrests]; n[i].h=Number(e.target.value); setBackrests(n)}} className="w-14 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-sm focus:border-[#005f6b] outline-none" />
                         <input type="number" value={it.t || ''} placeholder="Es" title="Espesor" onChange={e=>{let n=[...backrests]; n[i].t=Number(e.target.value); setBackrests(n)}} className="w-14 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-sm focus:border-[#005f6b] outline-none" />
@@ -202,7 +201,7 @@ export default function App() {
                   <p className="text-[8px] font-bold text-emerald-600 letter-spacing-widest uppercase">Acabado Impermeable + Espuma Premium</p>
                   <div className="mt-6 space-y-3">
                     {mattresses.map((it, i) => (
-                      <div key={i} className={`flex items-center justify-between p-4 rounded-2xl border ${it.qty > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50/50 border-slate-100'}`}>
+                      <div key={i} className={`flex items-center justify-between p-4 rounded-2xl border transition-all ${it.qty > 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50/50 border-slate-100'}`}>
                         <div className="flex flex-col">
                           <span className="text-[12px] font-bold text-slate-700">{it.w}x{it.h}x{it.t} cm</span>
                           <span className="text-[11px] font-extrabold text-[#005f6b]">${it.unit}</span>
@@ -218,7 +217,7 @@ export default function App() {
                   <p className="text-[8px] font-bold text-slate-400 letter-spacing-widest uppercase mb-6">Mínimo 4 unidades | $0.0005 x cm³</p>
                   <div className="space-y-4">
                     {customMattresses.map((it, i) => (
-                      <div key={i} className="flex items-center gap-2">
+                      <div key={i} className={`flex items-center gap-2 p-3 rounded-2xl border transition-all ${it.qty > 0 ? 'bg-[#005f6b]/5 border-[#005f6b]/20' : 'border-transparent'}`}>
                         <input type="number" value={it.w || ''} placeholder="Largo" onChange={e=>{let n=[...customMattresses]; n[i].w=Number(e.target.value); setCustomMattresses(n)}} className="w-20 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-xs focus:border-[#005f6b] outline-none" />
                         <input type="number" value={it.h || ''} placeholder="Ancho" onChange={e=>{let n=[...customMattresses]; n[i].h=Number(e.target.value); setCustomMattresses(n)}} className="w-20 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-xs focus:border-[#005f6b] outline-none" />
                         <input type="number" value={it.t || ''} placeholder="Espesor" onChange={e=>{let n=[...customMattresses]; n[i].t=Number(e.target.value); setCustomMattresses(n)}} className="w-20 h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-xs focus:border-[#005f6b] outline-none" />
@@ -233,13 +232,11 @@ export default function App() {
           </div>
         </section>
 
-        {/* Sección 2: Telas y Acabados */}
         <section className="mt-16 space-y-8">
           <h2 className="text-[10px] font-extrabold text-slate-400 letter-spacing-widest uppercase">2. TELA Y ACABADOS</h2>
           <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-50/50">
             
             {activeTab === 'cojin' && (
-              /* Bloque para Cojines: Selección simplificada */
               <div className="flex flex-col gap-4">
                 <p className="text-[9px] font-bold text-slate-400 mb-2 uppercase tracking-widest text-center">Selecciona el tipo de tela</p>
                 <div className="flex flex-col gap-3">
@@ -268,7 +265,6 @@ export default function App() {
             )}
 
             {activeTab === 'mueble' && (
-              /* Bloque para Muebles (Asientos y Espaldares): Selección de Calidad */
               <div className="space-y-10">
                 <div>
                   <p className="text-[9px] font-bold text-slate-400 mb-4 uppercase tracking-widest text-center">Calidad de Esponja</p>
@@ -318,7 +314,6 @@ export default function App() {
             )}
 
             {activeTab === 'colchoneta' && (
-              /* Bloque para Colchonetas: Detalle de Calidad Fija */
               <div className="space-y-6">
                 <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100 flex flex-col gap-4">
                   <div className="flex items-start gap-4">
@@ -334,9 +329,7 @@ export default function App() {
                       </p>
                     </div>
                   </div>
-                  
                   <div className="h-px bg-slate-200 w-full" />
-
                   <div className="flex items-start gap-4">
                     <div className="w-10 h-10 rounded-full bg-[#005f6b]/10 flex items-center justify-center flex-shrink-0">
                       <svg className="w-5 h-5 text-[#005f6b]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -361,8 +354,8 @@ export default function App() {
             <p className="text-[9px] font-black text-[#80d8e4] letter-spacing-widest uppercase mb-4">Presupuesto Estimado</p>
             <div className="flex items-baseline">
               <span className="text-xl font-bold mr-1 opacity-50">$</span>
-              <span className="text-6xl font-extrabold tracking-tighter leading-none">{Math.floor(calculation.total)}</span>
-              <span className="text-2xl font-bold opacity-30 ml-1">.{(calculation.total % 1).toFixed(2).split('.')[1]}</span>
+              <span className="text-6xl font-extrabold tracking-tighter leading-none">{calculation.total.toFixed(2).split('.')[0]}</span>
+              <span className="text-2xl font-bold opacity-30 ml-1">.{calculation.total.toFixed(2).split('.')[1]}</span>
             </div>
             {calculation.items.length > 0 && (
               <div className="mt-8 space-y-2 pt-6 border-t border-white/10">
@@ -378,7 +371,7 @@ export default function App() {
 
           <div className="px-2 space-y-6">
             <div>
-              <input type="text" placeholder="NOMBRE PARA EL PRESUPUESTO" value={customer.name} onChange={e=>setCustomer({...customer, name:e.target.value})} className="w-full bg-transparent border-b-2 border-slate-200 py-4 font-bold text-sm tracking-widest placeholder:text-slate-300 outline-none focus:border-[#005f6b] transition-all uppercase" />
+              <input type="text" placeholder="NOMBRE" value={customer.name} onChange={e=>setCustomer({...customer, name:e.target.value})} className="w-full bg-transparent border-b-2 border-slate-200 py-4 font-bold text-sm tracking-widest placeholder:text-slate-300 outline-none focus:border-[#005f6b] transition-all uppercase" />
             </div>
             <div>
               <input type="tel" placeholder="NÚMERO DE TELÉFONO" value={customer.phone} onChange={e=>setCustomer({...customer, phone:e.target.value})} className="w-full bg-transparent border-b-2 border-slate-200 py-4 font-bold text-sm tracking-widest placeholder:text-slate-300 outline-none focus:border-[#005f6b] transition-all" />
@@ -391,7 +384,7 @@ export default function App() {
         <button 
           onClick={sendWhatsApp} 
           disabled={!customer.name || !customer.phone || calculation.total === 0} 
-          className="w-full max-w-md mx-auto h-16 rounded-[2rem] bg-[#005f6b] text-white font-extrabold text-[11px] letter-spacing-widest uppercase shadow-2xl shadow-[#005f6b]/30 active:scale-95 disabled:opacity-20 transition-all flex items-center justify-center gap-4"
+          className="w-full max-md mx-auto h-16 rounded-[2rem] bg-[#005f6b] text-white font-extrabold text-[11px] letter-spacing-widest uppercase shadow-2xl shadow-[#005f6b]/30 active:scale-95 disabled:opacity-20 transition-all flex items-center justify-center gap-4"
         >
           ENVIAR COTIZACIÓN POR WHATSAPP
         </button>
