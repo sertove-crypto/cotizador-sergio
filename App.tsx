@@ -8,7 +8,6 @@ import {
   FURNITURE_PREMIUM_FABRIC_ADD,
   FURNITURE_VOLUME_FACTOR,
   STANDARD_MATTRESS_PRICES,
-  MATTRESS_WHOLESALE_FACTOR,
   BUSINESS_WHATSAPP
 } from './constants';
 
@@ -23,18 +22,16 @@ export default function App() {
   
   // Estados Colchonetas
   const [mattresses, setMattresses] = useState(() => STANDARD_MATTRESS_PRICES.map(m => ({ ...m, qty: 0 })));
-  const [customMattresses, setCustomMattresses] = useState(() => [{ w: 0, h: 0, t: 0, qty: 0 }]);
 
   // Estados de configuración
   const [cushionsFabricGroup, setCushionsFabricGroup] = useState<FabricGroup>(FabricGroup.A);
   const [furnitureFoamType, setFurnitureFoamType] = useState<FoamType>(FoamType.STANDARD);
   const [furnitureFabricGroup, setFurnitureFabricGroup] = useState<FabricGroup>(FabricGroup.A);
 
-  const addRow = (type: 'cushion' | 'seat' | 'backrest' | 'customMattress') => {
+  const addRow = (type: 'cushion' | 'seat' | 'backrest') => {
     if (type === 'cushion') setCushions([...cushions, { w: 45, h: 45, qty: 0 }]);
     if (type === 'seat') setSeats([...seats, { w: 50, h: 50, t: 10, qty: 0 }]);
     if (type === 'backrest') setBackrests([...backrests, { w: 50, h: 40, t: 8, qty: 0 }]);
-    if (type === 'customMattress') setCustomMattresses([...customMattresses, { w: 0, h: 0, t: 0, qty: 0 }]);
   };
 
   const calculation = useMemo(() => {
@@ -74,18 +71,8 @@ export default function App() {
       }
     });
 
-    customMattresses.forEach(it => {
-      if (it.qty >= 4 && it.w > 0 && it.h > 0 && it.t > 0) {
-        let vol = it.w * it.h * it.t;
-        let unit = vol * MATTRESS_WHOLESALE_FACTOR;
-        let sub = unit * it.qty;
-        items.push({ label: `Colchoneta P. Mayor ${it.w}x${it.h}x${it.t}`, qty: it.qty, sub });
-        grandTotal += sub;
-      }
-    });
-
     return { items, total: grandTotal };
-  }, [cushions, seats, backrests, mattresses, customMattresses, cushionsFabricGroup, furnitureFoamType, furnitureFabricGroup]);
+  }, [cushions, seats, backrests, mattresses, cushionsFabricGroup, furnitureFoamType, furnitureFabricGroup]);
 
   const sendWhatsApp = () => {
     if (!customer.name || !customer.phone) return alert("Por favor ingresa tu nombre y número de teléfono");
@@ -127,9 +114,15 @@ export default function App() {
             <button 
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 min-w-fit py-4 px-5 rounded-[2rem] text-[9px] font-extrabold letter-spacing-wide transition-all whitespace-nowrap ${activeTab === tab ? 'bg-white text-[#005f6b] shadow-lg' : 'text-white/60'}`}
+              className={`flex-1 min-w-fit py-4 px-3 rounded-[2rem] text-[9px] font-extrabold letter-spacing-wide transition-all text-center flex items-center justify-center ${activeTab === tab ? 'bg-white text-[#005f6b] shadow-lg' : 'text-white/60'}`}
             >
-              {tab === 'cojin' ? 'COJINES' : tab === 'mueble' ? 'MUEBLES' : 'COLCHONETAS'}
+              {tab === 'cojin' ? (
+                <span className="whitespace-nowrap uppercase">COJINES</span>
+              ) : tab === 'mueble' ? (
+                <span className="leading-[1.1] uppercase">ASIENTOS Y<br/>ESPALDARES</span>
+              ) : (
+                <span className="whitespace-nowrap uppercase">COLCHONETAS</span>
+              )}
             </button>
           ))}
         </nav>
@@ -242,35 +235,6 @@ export default function App() {
                         <QtyBtn v={it.qty} set={v=>{let n=[...mattresses]; n[i].qty=v; setMattresses(n)}} />
                       </div>
                     ))}
-                  </div>
-                </div>
-
-                <div className="pt-8 border-t border-slate-100">
-                  <h3 className="text-[11px] font-extrabold text-[#005f6b] tracking-wider mb-6 uppercase">A Medida (Por Mayor)</h3>
-                  <div className="space-y-6">
-                    {customMattresses.map((it, i) => (
-                      <div key={i} className={`${selectionClass(it.qty)} flex-col md:flex-row md:items-center gap-4 p-4 rounded-3xl border`}>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Largo</p>
-                            <input type="number" value={it.w || ''} placeholder="Largo" onChange={e=>{let n=[...customMattresses]; n[i].w=Number(e.target.value); setCustomMattresses(n)}} className={inputStyle} />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Ancho</p>
-                            <input type="number" value={it.h || ''} placeholder="Ancho" onChange={e=>{let n=[...customMattresses]; n[i].h=Number(e.target.value); setCustomMattresses(n)}} className={inputStyle} />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Esp</p>
-                            <input type="number" value={it.t || ''} placeholder="Espesor" onChange={e=>{let n=[...customMattresses]; n[i].t=Number(e.target.value); setCustomMattresses(n)}} className={inputStyle} />
-                          </div>
-                        </div>
-                        <div className="flex justify-between items-center md:ml-4">
-                          <span className="md:hidden text-[10px] font-black text-[#005f6b]/40 uppercase tracking-widest">CANTIDAD</span>
-                          <QtyBtn v={it.qty} set={v=>{let n=[...customMattresses]; n[i].qty=v; setCustomMattresses(n)}} />
-                        </div>
-                      </div>
-                    ))}
-                    <AddBtn onClick={() => addRow('customMattress')} label="Colchoneta" />
                   </div>
                 </div>
               </div>
