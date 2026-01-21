@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-// Import Type enum to fix literal type assignment errors
-import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
+// Import necessary types from @google/genai
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { FabricGroup, FoamType } from './types';
 import { 
   FOAM_MULTIPLIERS, 
@@ -14,7 +14,11 @@ import {
   BUSINESS_WHATSAPP
 } from './constants';
 
-// --- Utilidades de Audio para Live API ---
+// --- Audio Utility Functions for Gemini Live API ---
+
+/**
+ * Decodes a base64 string into a Uint8Array.
+ */
 function decodeBase64(base64: string) {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -25,6 +29,9 @@ function decodeBase64(base64: string) {
   return bytes;
 }
 
+/**
+ * Encodes a Uint8Array into a base64 string.
+ */
 function encodeBase64(bytes: Uint8Array) {
   let binary = '';
   const len = bytes.byteLength;
@@ -34,6 +41,9 @@ function encodeBase64(bytes: Uint8Array) {
   return btoa(binary);
 }
 
+/**
+ * Decodes raw PCM audio data into an AudioBuffer for playback.
+ */
 async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
   const dataInt16 = new Int16Array(data.buffer);
   const frameCount = dataInt16.length / numChannels;
@@ -48,33 +58,40 @@ async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: 
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('mueble');
+  const [activeTab, setActiveTab] = useState<string>('cushion');
   const [customer, setCustomer] = useState({ name: '', phone: '' });
   const [isVoiceActive, setIsVoiceActive] = useState(false);
 
-  // Estados de productos
+  // Product states
   const [cushions, setCushions] = useState(() => [{ w: 45, h: 45, qty: 0 }]);
   const [seats, setSeats] = useState(() => [{ w: 50, h: 50, t: 10, qty: 0 }]);
   const [backrests, setBackrests] = useState(() => [{ w: 50, h: 40, t: 8, qty: 0 }]);
   const [mattresses, setMattresses] = useState(() => STANDARD_MATTRESS_PRICES.map(m => ({ ...m, qty: 0 })));
 
-  // Estados de configuración
+  // Configuration states
   const [cushionsFabricGroup, setCushionsFabricGroup] = useState<FabricGroup>(FabricGroup.A);
   const [furnitureFoamType, setFurnitureFoamType] = useState<FoamType>(FoamType.STANDARD);
   const [furnitureFabricGroup, setFurnitureFabricGroup] = useState<FabricGroup>(FabricGroup.A);
 
-  // Referencias para Live API
+  // References for Gemini Live API
   const sessionRef = useRef<any>(null);
   const audioContextRef = useRef<{ input: AudioContext; output: AudioContext } | null>(null);
   const nextStartTimeRef = useRef(0);
   const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const micStreamRef = useRef<MediaStream | null>(null);
 
+  /**
+   * Adds a new row for input fields.
+   */
   const addRow = (type: 'cushion' | 'seat' | 'backrest') => {
     if (type === 'cushion') setCushions(prev => [...prev, { w: 45, h: 45, qty: 0 }]);
     if (type === 'seat') setSeats(prev => [...prev, { w: 50, h: 50, t: 10, qty: 0 }]);
     if (type === 'backrest') setBackrests(prev => [...prev, { w: 50, h: 40, t: 8, qty: 0 }]);
   };
 
+  /**
+   * Main calculation logic for the quote.
+   */
   const calculation = useMemo(() => {
     let items: any[] = [];
     let grandTotal = 0;
@@ -115,7 +132,26 @@ export default function App() {
     return { items, total: grandTotal };
   }, [cushions, seats, backrests, mattresses, cushionsFabricGroup, furnitureFoamType, furnitureFabricGroup]);
 
-  // --- Lógica de Voz (Gemini Live API) ---
+  // FIX: Added missing stopVoiceAssistant function to clean up resources
+  const stopVoiceAssistant = () => {
+    if (sessionRef.current) {
+      sessionRef.current.close();
+      sessionRef.current = null;
+    }
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach(track => track.stop());
+      micStreamRef.current = null;
+    }
+    activeSourcesRef.current.forEach(s => {
+      try { s.stop(); } catch (e) {}
+    });
+    activeSourcesRef.current.clear();
+    setIsVoiceActive(false);
+  };
+
+  /**
+   * Starts the Gemini Live Assistant session.
+   */
   const startVoiceAssistant = async () => {
     if (isVoiceActive) {
       stopVoiceAssistant();
@@ -123,11 +159,17 @@ export default function App() {
     }
 
     try {
+      if (!window.isSecureContext && window.location.hostname !== 'localhost') {
+        alert("¡Error de seguridad! El micrófono solo funciona en sitios con HTTPS.");
+        return;
+      }
+
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error("Tu navegador no soporta entrada de audio.");
+        throw new Error("API de micrófono no disponible.");
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micStreamRef.current = stream;
       
       if (!audioContextRef.current) {
         audioContextRef.current = {
@@ -154,6 +196,7 @@ export default function App() {
               const int16 = new Int16Array(inputData.length);
               for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
               
+              // Rely on sessionPromise to send data to avoid race conditions
               sessionPromise.then(session => {
                 session.sendRealtimeInput({
                   media: { data: encodeBase64(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' }
@@ -178,447 +221,235 @@ export default function App() {
               activeSourcesRef.current.add(source);
               source.onended = () => activeSourcesRef.current.delete(source);
             }
-
             if (msg.serverContent?.interrupted) {
-              activeSourcesRef.current.forEach(s => { try { s.stop(); } catch(e){} });
+              activeSourcesRef.current.forEach(s => {
+                try { s.stop(); } catch (e) {}
+              });
               activeSourcesRef.current.clear();
               nextStartTimeRef.current = 0;
             }
-
-            if (msg.toolCall) {
-              for (const fc of msg.toolCall.functionCalls) {
-                let result = "ok";
-                switch (fc.name) {
-                  case 'updateTab':
-                    if (['cojin', 'mueble', 'colchoneta'].includes(fc.args.tab as string)) setActiveTab(fc.args.tab as string);
-                    break;
-                  case 'updateCushion':
-                    setCushions(prev => {
-                      const n = [...prev];
-                      const idx = (fc.args.index as number) || 0;
-                      if (!n[idx]) n[idx] = { w: 0, h: 0, qty: 0 };
-                      if (fc.args.w) n[idx].w = Number(fc.args.w);
-                      if (fc.args.h) n[idx].h = Number(fc.args.h);
-                      if (fc.args.qty !== undefined) n[idx].qty = Number(fc.args.qty);
-                      return n;
-                    });
-                    break;
-                  case 'updateFurniture':
-                    const listSetter = fc.args.type === 'asiento' ? setSeats : setBackrests;
-                    listSetter(prev => {
-                      const n = [...prev];
-                      const idx = (fc.args.index as number) || 0;
-                      if (!n[idx]) n[idx] = { w: 0, h: 0, t: 0, qty: 0 };
-                      if (fc.args.w) n[idx].w = Number(fc.args.w);
-                      if (fc.args.h) n[idx].h = Number(fc.args.h);
-                      if (fc.args.t) n[idx].t = Number(fc.args.t);
-                      if (fc.args.qty !== undefined) n[idx].qty = Number(fc.args.qty);
-                      return n;
-                    });
-                    break;
-                  case 'setCustomerInfo':
-                    setCustomer(prev => ({
-                      name: (fc.args.name as string) || prev.name,
-                      phone: (fc.args.phone as string) || prev.phone
-                    }));
-                    break;
-                  case 'setOptions':
-                    if (fc.args.target === 'cojin') {
-                      setCushionsFabricGroup(fc.args.fabricGroup === 'B' ? FabricGroup.B : FabricGroup.A);
-                    } else {
-                      if (fc.args.fabricGroup) setFurnitureFabricGroup(fc.args.fabricGroup === 'B' ? FabricGroup.B : FabricGroup.A);
-                      if (fc.args.foam) {
-                        const f = fc.args.foam as string;
-                        if (f.includes('Premium')) setFurnitureFoamType(FoamType.PREMIUM);
-                        else if (f.includes('Básica')) setFurnitureFoamType(FoamType.ECONOMY);
-                        else setFurnitureFoamType(FoamType.STANDARD);
-                      }
-                    }
-                    break;
-                }
-                sessionPromise.then(s => s.sendToolResponse({
-                  functionResponses: { id: fc.id, name: fc.name, response: { result } }
-                }));
-              }
-            }
           },
-          onclose: () => setIsVoiceActive(false),
           onerror: (e) => {
-            console.error("Error en Live API:", e);
-            setIsVoiceActive(false);
+            console.error(e);
+            stopVoiceAssistant();
           },
+          onclose: () => {
+            setIsVoiceActive(false);
+          }
         },
         config: {
           responseModalities: [Modality.AUDIO],
-          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
-          systemInstruction: `Eres el asistente de voz de "Cojines Sergio". Tu misión es ayudar al cliente a completar su cotización.
-          Pestañas: 'cojin', 'mueble' (asientos/espaldares), 'colchoneta'.
-          Acciones:
-          - updateCushion: Medidas y cantidad de cojines decorativos.
-          - updateFurniture: Medidas (Largo, Ancho, Espesor) y cantidad de asientos o espaldares.
-          - setCustomerInfo: Nombre y teléfono del cliente.
-          - setOptions: Cambiar tipo de tela o espuma.
-          Sé breve y amable. Pregunta medidas que falten de forma natural.`,
-          tools: [{
-            functionDeclarations: [
-              // Use Type enum from @google/genai to fix parameter type errors
-              { name: 'updateTab', parameters: { type: Type.OBJECT, properties: { tab: { type: Type.STRING } } } },
-              { name: 'updateCushion', parameters: { type: Type.OBJECT, properties: { index: { type: Type.NUMBER }, w: { type: Type.NUMBER }, h: { type: Type.NUMBER }, qty: { type: Type.NUMBER } } } },
-              { name: 'updateFurniture', parameters: { type: Type.OBJECT, properties: { type: { type: Type.STRING, enum: ['asiento', 'espaldar'] }, index: { type: Type.NUMBER }, w: { type: Type.NUMBER }, h: { type: Type.NUMBER }, t: { type: Type.NUMBER }, qty: { type: Type.NUMBER } } } },
-              { name: 'setCustomerInfo', parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, phone: { type: Type.STRING } } } },
-              { name: 'setOptions', parameters: { type: Type.OBJECT, properties: { target: { type: Type.STRING, enum: ['cojin', 'furniture'] }, fabricGroup: { type: Type.STRING }, foam: { type: Type.STRING } } } }
-            ]
-          }]
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Zephyr' } }
+          },
+          systemInstruction: 'Eres un asistente experto en cotizaciones de tapicería. Ayuda al usuario con precios de cojines, asientos y colchonetas según sus medidas.'
         }
       });
 
-      sessionRef.current = await sessionPromise;
-    } catch (err: any) {
-      console.error("Error iniciando voz:", err);
-      setIsVoiceActive(false);
-      if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
-        alert("El acceso al micrófono fue denegado. Por favor, actívalo en la configuración de tu navegador para usar el asistente de voz.");
-      } else {
-        alert("No se pudo iniciar el asistente: " + err.message);
-      }
+      sessionPromise.then(s => sessionRef.current = s);
+
+    } catch (err) {
+      console.error(err);
+      alert("Error iniciando asistente de voz.");
     }
   };
 
-  const stopVoiceAssistant = () => {
-    if (sessionRef.current) {
-      sessionRef.current.close();
-      sessionRef.current = null;
-    }
-    setIsVoiceActive(false);
+  /**
+   * Generates a WhatsApp message with the quote details.
+   */
+  const handleWhatsApp = () => {
+    let text = `Hola, mi nombre es ${customer.name || 'Cliente'}. Deseo cotizar:\n\n`;
+    calculation.items.forEach(it => {
+      text += `- ${it.label} x${it.qty}: $${it.sub.toFixed(2)}\n`;
+    });
+    text += `\n*TOTAL: $${calculation.total.toFixed(2)}*`;
+    window.open(`https://wa.me/${BUSINESS_WHATSAPP}?text=${encodeURIComponent(text)}`, '_blank');
   };
-
-  const sendWhatsApp = () => {
-    if (!customer.name || !customer.phone) return alert("Por favor ingresa tu nombre y número de teléfono");
-    let detailMsg = calculation.items.map(i => `• ${i.qty}x ${i.label} -> $${i.sub.toFixed(2)}`).join('\n');
-    let msg = `🧾 *COTIZACIÓN - COJINES SERGIO*\n\n*CLIENTE:* ${customer.name.toUpperCase()}\n*TELÉFONO:* ${customer.phone}\n\n*DETALLE:*\n${detailMsg}\n\n💰 *TOTAL: $${calculation.total.toFixed(2)}*`;
-    window.open(`https://wa.me/${BUSINESS_WHATSAPP}?text=${encodeURIComponent(msg)}`);
-  };
-
-  const QtyBtn = ({ v, set }: { v: number, set: (n: number) => void }) => (
-    <div className="flex items-center gap-2 bg-white/70 p-1.5 rounded-2xl border border-slate-200">
-      <button onClick={() => set(Math.max(0, v - 1))} className="w-10 h-10 flex items-center justify-center text-[#005f6b] font-bold text-2xl active:bg-slate-100 rounded-lg transition-colors">-</button>
-      <span className="w-6 text-center text-sm font-black text-slate-700">{v}</span>
-      <button onClick={() => set(v + 1)} className="w-10 h-10 flex items-center justify-center text-[#005f6b] font-bold text-2xl active:bg-slate-100 rounded-lg transition-colors">+</button>
-    </div>
-  );
-
-  const AddBtn = ({ onClick, label }: { onClick: () => void, label: string }) => (
-    <button onClick={onClick} className="w-full mt-4 py-4 border-2 border-dashed border-slate-200 rounded-2xl text-[10px] font-black text-slate-400 uppercase tracking-widest hover:border-[#005f6b] hover:text-[#005f6b] transition-all active:scale-[0.98] bg-white/30">
-      + Agregar {label}
-    </button>
-  );
-
-  const selectionClass = (qty: number) => 
-    `flex transition-all duration-300 ${qty > 0 ? 'bg-[#E0F7F9] border-[#80d8e4] shadow-md' : 'border-transparent'}`;
-
-  const inputStyle = "w-full md:w-16 h-16 md:h-14 bg-white border border-slate-200 rounded-2xl text-center font-bold text-lg md:text-sm focus:border-[#005f6b] focus:ring-2 focus:ring-[#005f6b]/10 outline-none transition-all";
 
   return (
-    <div className="min-h-screen pb-40">
-      <header className="px-8 pt-10 pb-16 flex flex-col items-center relative">
-        <h1 className="text-[26px] font-extrabold text-white tracking-tight leading-none drop-shadow-lg">Cojines Sergio</h1>
-        <p className="text-[10px] font-bold text-white/70 letter-spacing-widest mt-2 uppercase">Taller de Tapicería</p>
-      </header>
-
-      <main className="max-w-xl mx-auto px-4 md:px-6">
+    <div className="min-h-screen bg-gray-50 text-gray-800 p-4 md:p-8 font-sans">
+      <div className="max-w-4xl mx-auto space-y-6">
         
-        <nav className="flex items-center bg-white/10 backdrop-blur-md p-1.5 rounded-[2.5rem] mb-12 overflow-x-auto no-scrollbar gap-1 border border-white/20 shadow-sm sticky top-4 z-40 mx-2">
-          {['cojin', 'mueble', 'colchoneta'].map(tab => (
-            <button 
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 min-w-fit py-4 px-3 rounded-[2rem] text-[9px] font-extrabold letter-spacing-wide transition-all text-center flex items-center justify-center ${activeTab === tab ? 'bg-white text-[#005f6b] shadow-lg' : 'text-white/60'}`}
-            >
-              {tab === 'cojin' ? (
-                <span className="whitespace-nowrap uppercase">COJINES</span>
-              ) : tab === 'mueble' ? (
-                <span className="leading-[1.1] uppercase">ASIENTOS Y<br/>ESPALDARES</span>
-              ) : (
-                <span className="whitespace-nowrap uppercase">COLCHONETAS</span>
-              )}
-            </button>
-          ))}
-        </nav>
-
-        <section className="space-y-12">
-          <div className="flex items-center gap-4 px-2">
-            <h2 className="text-[10px] font-extrabold text-white/70 letter-spacing-widest uppercase">1. MEDIDAS Y CANTIDADES (CM)</h2>
+        {/* Header Section */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 border border-gray-100">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Cotizador Tapicería</h1>
+            <p className="text-gray-500 text-sm">Calcula el valor de tus proyectos a medida</p>
           </div>
-
-          <div className="glass-card rounded-[2.5rem] p-6 md:p-8 shadow-sm">
-            {activeTab === 'cojin' && (
-              <div className="space-y-6">
-                <h3 className="text-[11px] font-extrabold text-[#005f6b] tracking-wider uppercase">Cojines Decorativos</h3>
-                {cushions.map((it, i) => (
-                  <div key={i} className={`${selectionClass(it.qty)} flex-col md:flex-row md:items-center gap-4 p-4 rounded-3xl border`}>
-                    <div className="flex gap-3">
-                      <div className="flex-1">
-                        <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest mb-1 ml-1 md:hidden">Ancho</p>
-                        <input type="number" value={it.w || ''} placeholder="An" onChange={e=>{let n=[...cushions]; n[i].w=Number(e.target.value); setCushions(n)}} className={inputStyle} />
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-[8px] font-black text-slate-300 uppercase tracking-widest mb-1 ml-1 md:hidden">Alto</p>
-                        <input type="number" value={it.h || ''} placeholder="Al" onChange={e=>{let n=[...cushions]; n[i].h=Number(e.target.value); setCushions(n)}} className={inputStyle} />
-                      </div>
-                    </div>
-                    <div className="flex justify-between items-center md:ml-4">
-                      <span className="md:hidden text-[10px] font-black text-[#005f6b]/40 uppercase tracking-widest">CANTIDAD</span>
-                      <QtyBtn v={it.qty} set={v=>{let n=[...cushions]; n[i].qty=v; setCushions(n)}} />
-                    </div>
-                  </div>
-                ))}
-                <AddBtn onClick={() => addRow('cushion')} label="Cojín" />
-              </div>
+          
+          <button
+            onClick={startVoiceAssistant}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-medium transition-all ${
+              isVoiceActive 
+              ? 'bg-red-100 text-red-600 animate-pulse border border-red-200' 
+              : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-100'
+            }`}
+          >
+            {isVoiceActive ? (
+              <><span className="w-2 h-2 bg-red-600 rounded-full"></span> Escuchando...</>
+            ) : (
+              <><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/></svg> Asistente AI</>
             )}
+          </button>
+        </div>
 
-            {activeTab === 'mueble' && (
-              <div className="space-y-10">
-                <div>
-                  <h3 className="text-[11px] font-extrabold text-[#005f6b] tracking-wider mb-6 uppercase">Asientos</h3>
-                  <div className="space-y-6">
-                    {seats.map((it, i) => (
-                      <div key={i} className={`${selectionClass(it.qty)} flex-col md:flex-row md:items-center gap-4 p-4 rounded-3xl border`}>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Largo</p>
-                            <input type="number" value={it.w || ''} placeholder="L" title="Largo" onChange={e=>{let n=[...seats]; n[i].w=Number(e.target.value); setSeats(n)}} className={inputStyle} />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Ancho</p>
-                            <input type="number" value={it.h || ''} placeholder="An" title="Ancho" onChange={e=>{let n=[...seats]; n[i].h=Number(e.target.value); setSeats(n)}} className={inputStyle} />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Esp</p>
-                            <input type="number" value={it.t || ''} placeholder="Es" title="Espesor" onChange={e=>{let n=[...seats]; n[i].t=Number(e.target.value); setSeats(n)}} className={inputStyle} />
-                          </div>
-                        </div>
-                        <div className="flex justify-between items-center md:ml-4">
-                          <span className="md:hidden text-[10px] font-black text-[#005f6b]/40 uppercase tracking-widest">CANTIDAD</span>
-                          <QtyBtn v={it.qty} set={v=>{let n=[...seats]; n[i].qty=v; setSeats(n)}} />
-                        </div>
-                      </div>
-                    ))}
-                    <AddBtn onClick={() => addRow('seat')} label="Asiento" />
-                  </div>
-                </div>
-
-                <div className="pt-8 border-t border-slate-100">
-                  <h3 className="text-[11px] font-extrabold text-[#005f6b] tracking-wider mb-6 uppercase">Espaldares</h3>
-                  <div className="space-y-6">
-                    {backrests.map((it, i) => (
-                      <div key={i} className={`${selectionClass(it.qty)} flex-col md:flex-row md:items-center gap-4 p-4 rounded-3xl border`}>
-                        <div className="flex gap-2">
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Largo</p>
-                            <input type="number" value={it.w || ''} placeholder="L" title="Largo" onChange={e=>{let n=[...backrests]; n[i].w=Number(e.target.value); setBackrests(n)}} className={inputStyle} />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Ancho</p>
-                            <input type="number" value={it.h || ''} placeholder="An" title="Ancho" onChange={e=>{let n=[...backrests]; n[i].h=Number(e.target.value); setBackrests(n)}} className={inputStyle} />
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-[8px] font-black text-slate-300 uppercase mb-1 ml-1 md:hidden">Esp</p>
-                            <input type="number" value={it.t || ''} placeholder="Es" title="Espesor" onChange={e=>{let n=[...backrests]; n[i].t=Number(e.target.value); setBackrests(n)}} className={inputStyle} />
-                          </div>
-                        </div>
-                        <div className="flex justify-between items-center md:ml-4">
-                          <span className="md:hidden text-[10px] font-black text-[#005f6b]/40 uppercase tracking-widest">CANTIDAD</span>
-                          <QtyBtn v={it.qty} set={v=>{let n=[...backrests]; n[i].qty=v; setBackrests(n)}} />
-                        </div>
-                      </div>
-                    ))}
-                    <AddBtn onClick={() => addRow('backrest')} label="Espaldar" />
-                  </div>
-                </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          
+          {/* Main Configuration Section */}
+          <div className="md:col-span-2 space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="flex border-b">
+                <button onClick={() => setActiveTab('cushion')} className={`flex-1 py-4 px-2 text-sm font-semibold ${activeTab === 'cushion' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/30' : 'text-gray-500 hover:bg-gray-50'}`}>Cojines</button>
+                <button onClick={() => setActiveTab('mueble')} className={`flex-1 py-4 px-2 text-sm font-semibold ${activeTab === 'mueble' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/30' : 'text-gray-500 hover:bg-gray-50'}`}>Asientos/Espaldar</button>
+                <button onClick={() => setActiveTab('mattress')} className={`flex-1 py-4 px-2 text-sm font-semibold ${activeTab === 'mattress' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50/30' : 'text-gray-500 hover:bg-gray-50'}`}>Colchonetas</button>
               </div>
-            )}
 
-            {activeTab === 'colchoneta' && (
-              <div className="space-y-10">
-                <div>
-                  <h3 className="text-[11px] font-extrabold text-[#005f6b] tracking-wider mb-1 uppercase">Predefinidas</h3>
-                  <p className="text-[8px] font-bold text-[#005f6b]/60 letter-spacing-widest uppercase mb-6">Impermeable + Premium</p>
-                  <div className="space-y-3">
-                    {mattresses.map((it, i) => (
-                      <div key={i} className={`flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 ${it.qty > 0 ? 'bg-[#E0F7F9] border-[#80d8e4] shadow-md' : 'bg-slate-50/50 border-slate-100'}`}>
-                        <div className="flex flex-col">
-                          <span className="text-[12px] font-bold text-slate-700">{it.w}x{it.h}x{it.t} cm</span>
-                          <span className="text-[11px] font-extrabold text-[#005f6b]">${it.unit}</span>
-                        </div>
-                        <QtyBtn v={it.qty} set={v=>{let n=[...mattresses]; n[i].qty=v; setMattresses(n)}} />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
-
-        <section className="mt-16 space-y-8">
-          <h2 className="text-[10px] font-extrabold text-white/60 letter-spacing-widest uppercase px-2">2. TELA Y ACABADOS</h2>
-          <div className="glass-card rounded-[2.5rem] p-6 md:p-8 shadow-sm">
-            {activeTab === 'cojin' && (
-              <div className="flex flex-col gap-4">
-                <p className="text-[9px] font-bold text-slate-400 mb-2 uppercase tracking-widest text-center">Tipo de Tela</p>
-                <div className="flex flex-col gap-3">
-                  {[FabricGroup.A, FabricGroup.B].map(g => (
-                    <button 
-                      key={g}
-                      onClick={() => setCushionsFabricGroup(g)}
-                      className={`w-full py-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center ${
-                        cushionsFabricGroup === g ? 'border-[#005f6b] bg-[#005f6b]/5 text-[#005f6b]' : 'border-slate-100 bg-white/50 text-slate-400'
-                      }`}
-                    >
-                      <span className="text-[11px] font-black uppercase tracking-widest">TELA TAPIZ {g === FabricGroup.A ? 'ESTÁNDAR' : 'PREMIUM'}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'mueble' && (
-              <div className="space-y-10">
-                <div>
-                  <p className="text-[9px] font-bold text-slate-400 mb-4 uppercase tracking-widest text-center">Calidad de Esponja</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[FoamType.ECONOMY, FoamType.STANDARD, FoamType.PREMIUM].map((type) => (
-                      <button 
-                        key={type}
-                        onClick={() => setFurnitureFoamType(type)}
-                        className={`py-5 md:py-4 rounded-xl border-2 transition-all text-[9px] font-black uppercase tracking-widest ${
-                          furnitureFoamType === type ? 'border-[#005f6b] bg-[#005f6b]/5 text-[#005f6b]' : 'border-slate-100 bg-white/50 text-slate-400'
-                        }`}
+              <div className="p-6">
+                {activeTab === 'cushion' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-bold text-lg">Cojines Decorativos</h3>
+                      <select 
+                        value={cushionsFabricGroup} 
+                        onChange={(e) => setCushionsFabricGroup(e.target.value as FabricGroup)}
+                        className="text-sm border rounded-lg px-2 py-1 bg-gray-50"
                       >
-                        {type === FoamType.ECONOMY ? 'Básica' : type === FoamType.STANDARD ? 'Estándar' : 'Premium'}
-                      </button>
+                        <option value={FabricGroup.A}>Tapiz Estándar (A)</option>
+                        <option value={FabricGroup.B}>Tapiz Premium (B)</option>
+                      </select>
+                    </div>
+                    {cushions.map((it, idx) => (
+                      <div key={idx} className="grid grid-cols-3 gap-2">
+                        <input type="number" placeholder="Ancho" value={it.w || ''} onChange={e => { const n = [...cushions]; n[idx].w = +e.target.value; setCushions(n); }} className="border rounded-lg p-2 text-sm focus:ring-1 focus:ring-indigo-500" />
+                        <input type="number" placeholder="Alto" value={it.h || ''} onChange={e => { const n = [...cushions]; n[idx].h = +e.target.value; setCushions(n); }} className="border rounded-lg p-2 text-sm focus:ring-1 focus:ring-indigo-500" />
+                        <input type="number" placeholder="Cant." value={it.qty || ''} onChange={e => { const n = [...cushions]; n[idx].qty = +e.target.value; setCushions(n); }} className="border rounded-lg p-2 text-sm bg-indigo-50 border-indigo-100" />
+                      </div>
                     ))}
+                    <button onClick={() => addRow('cushion')} className="text-indigo-600 text-sm font-semibold hover:underline">+ Agregar otro cojín</button>
                   </div>
-                </div>
+                )}
 
-                <div>
-                  <p className="text-[9px] font-bold text-slate-400 mb-4 uppercase tracking-widest text-center">Tipo de Tela</p>
-                  <div className="flex flex-col gap-3">
-                    {[FabricGroup.A, FabricGroup.B].map(g => (
-                      <button 
-                        key={g}
-                        onClick={() => setFurnitureFabricGroup(g)}
-                        className={`w-full py-6 rounded-2xl border-2 transition-all flex flex-col items-center justify-center ${
-                          furnitureFabricGroup === g ? 'border-[#005f6b] bg-[#005f6b]/5 text-[#005f6b]' : 'border-slate-100 bg-white/50 text-slate-400'
-                        }`}
-                      >
-                        <span className="text-[11px] font-black uppercase tracking-widest">TELA TAPIZ {g === FabricGroup.A ? 'ESTÁNDAR' : 'PREMIUM'}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'colchoneta' && (
-              <div className="space-y-6">
-                <div className="p-6 bg-white/50 rounded-2xl border border-slate-100 flex flex-col gap-6">
-                  {[
-                    { title: "ESPONJA PREMIUM", desc: "Alta densidad para máxima firmeza y durabilidad.", icon: "M5 13l4 4L19 7" },
-                    { title: "SINTÉTICO DE CALIDAD", desc: "Expandible impermeable, fácil limpieza y uso diario.", icon: "M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" }
-                  ].map((feat, idx) => (
-                    <div key={idx} className="flex items-start gap-4">
-                      <div className="w-10 h-10 rounded-full bg-[#E0F7F9] flex items-center justify-center flex-shrink-0">
-                        <svg className="w-5 h-5 text-[#005f6b]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d={feat.icon} />
-                        </svg>
+                {activeTab === 'mueble' && (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4 bg-gray-50 p-4 rounded-xl">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Espuma</label>
+                        <select value={furnitureFoamType} onChange={e => setFurnitureFoamType(e.target.value as FoamType)} className="w-full border rounded-lg p-2 text-sm">
+                          <option value={FoamType.ECONOMY}>Básica</option>
+                          <option value={FoamType.STANDARD}>Estándar</option>
+                          <option value={FoamType.PREMIUM}>Premium</option>
+                        </select>
                       </div>
                       <div>
-                        <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest mb-1">{feat.title}</h4>
-                        <p className="text-[10px] font-bold text-slate-500 leading-relaxed">{feat.desc}</p>
+                        <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Tela</label>
+                        <select value={furnitureFabricGroup} onChange={e => setFurnitureFabricGroup(e.target.value as FabricGroup)} className="w-full border rounded-lg p-2 text-sm">
+                          <option value={FabricGroup.A}>Estándar (A)</option>
+                          <option value={FabricGroup.B}>Premium (B)</option>
+                        </select>
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
 
-        <section className="mt-16 mb-20 space-y-8">
-          <div className="bg-[#005f6b]/95 backdrop-blur-md rounded-[2.5rem] p-10 text-white shadow-xl shadow-[#002b31]/40 border border-white/20 mx-2">
-            <p className="text-[9px] font-black text-[#80d8e4] letter-spacing-widest uppercase mb-4">Presupuesto Estimado</p>
-            <div className="flex items-baseline">
-              <span className="text-xl font-bold mr-1 opacity-50">$</span>
-              <span className="text-6xl font-extrabold tracking-tighter leading-none">{calculation.total.toFixed(2).split('.')[0]}</span>
-              <span className="text-2xl font-bold opacity-30 ml-1">.{calculation.total.toFixed(2).split('.')[1]}</span>
-            </div>
-            {calculation.items.length > 0 && (
-              <div className="mt-8 space-y-2 pt-6 border-t border-white/10 max-h-60 overflow-y-auto no-scrollbar">
-                {calculation.items.map((it, idx) => (
-                  <div key={idx} className="flex justify-between text-[10px] font-bold uppercase tracking-tight">
-                    <span className="opacity-70 truncate mr-4">{it.qty}x {it.label}</span>
-                    <span className="text-[#80d8e4] flex-shrink-0">${it.sub.toFixed(2)}</span>
+                    <div className="space-y-4">
+                      <h4 className="font-bold text-sm text-gray-600">Asientos</h4>
+                      {seats.map((it, idx) => (
+                        <div key={idx} className="grid grid-cols-4 gap-2">
+                          <input type="number" placeholder="An" value={it.w || ''} onChange={e => { const n = [...seats]; n[idx].w = +e.target.value; setSeats(n); }} className="border rounded-lg p-2 text-xs" />
+                          <input type="number" placeholder="Al" value={it.h || ''} onChange={e => { const n = [...seats]; n[idx].h = +e.target.value; setSeats(n); }} className="border rounded-lg p-2 text-xs" />
+                          <input type="number" placeholder="Gr" value={it.t || ''} onChange={e => { const n = [...seats]; n[idx].t = +e.target.value; setSeats(n); }} className="border rounded-lg p-2 text-xs" />
+                          <input type="number" placeholder="Cant" value={it.qty || ''} onChange={e => { const n = [...seats]; n[idx].qty = +e.target.value; setSeats(n); }} className="border rounded-lg p-2 text-xs bg-indigo-50" />
+                        </div>
+                      ))}
+                      <button onClick={() => addRow('seat')} className="text-indigo-600 text-sm font-semibold">+ Agregar Asiento</button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="font-bold text-sm text-gray-600">Espaldares</h4>
+                      {backrests.map((it, idx) => (
+                        <div key={idx} className="grid grid-cols-4 gap-2">
+                          <input type="number" placeholder="An" value={it.w || ''} onChange={e => { const n = [...backrests]; n[idx].w = +e.target.value; setBackrests(n); }} className="border rounded-lg p-2 text-xs" />
+                          <input type="number" placeholder="Al" value={it.h || ''} onChange={e => { const n = [...backrests]; n[idx].h = +e.target.value; setBackrests(n); }} className="border rounded-lg p-2 text-xs" />
+                          <input type="number" placeholder="Gr" value={it.t || ''} onChange={e => { const n = [...backrests]; n[idx].t = +e.target.value; setBackrests(n); }} className="border rounded-lg p-2 text-xs" />
+                          <input type="number" placeholder="Cant" value={it.qty || ''} onChange={e => { const n = [...backrests]; n[idx].qty = +e.target.value; setBackrests(n); }} className="border rounded-lg p-2 text-xs bg-indigo-50" />
+                        </div>
+                      ))}
+                      <button onClick={() => addRow('backrest')} className="text-indigo-600 text-sm font-semibold">+ Agregar Espaldar</button>
+                    </div>
                   </div>
-                ))}
+                )}
+
+                {activeTab === 'mattress' && (
+                  <div className="space-y-4">
+                    <h3 className="font-bold text-lg mb-4">Colchonetas Estándar</h3>
+                    <div className="divide-y border rounded-xl overflow-hidden">
+                      {mattresses.map((it, idx) => (
+                        <div key={idx} className="flex items-center justify-between p-4 hover:bg-gray-50 transition-colors">
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900">{it.w}x{it.h}x{it.t} cm</p>
+                            <p className="text-xs text-indigo-600 font-bold">${it.unit.toFixed(2)} c/u</p>
+                          </div>
+                          <input 
+                            type="number" 
+                            min="0" 
+                            value={it.qty || ''} 
+                            onChange={e => { const n = [...mattresses]; n[idx].qty = +e.target.value; setMattresses(n); }} 
+                            placeholder="0"
+                            className="w-20 border rounded-lg p-2 text-center text-sm bg-indigo-50 border-indigo-100" 
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
 
-          <div className="px-4 space-y-6">
-            <input type="text" placeholder="NOMBRE COMPLETO" value={customer.name} onChange={e=>setCustomer({...customer, name:e.target.value})} className="w-full bg-white/20 backdrop-blur-sm border-b-2 border-white/30 py-5 px-3 font-black text-sm tracking-widest placeholder:text-white/40 text-white outline-none focus:border-white focus:bg-white/30 transition-all uppercase rounded-t-2xl" />
-            <input type="tel" placeholder="TELÉFONO DE CONTACTO" value={customer.phone} onChange={e=>setCustomer({...customer, phone:e.target.value})} className="w-full bg-white/20 backdrop-blur-sm border-b-2 border-white/30 py-5 px-3 font-black text-sm tracking-widest placeholder:text-white/40 text-white outline-none focus:border-white focus:bg-white/30 transition-all rounded-t-2xl" />
-          </div>
-        </section>
-      </main>
+          {/* Sidebar Section */}
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+              <h3 className="font-bold text-gray-900">Contacto</h3>
+              <input type="text" placeholder="Nombre" value={customer.name} onChange={e => setCustomer({...customer, name: e.target.value})} className="w-full border rounded-lg p-2.5 text-sm" />
+              <input type="tel" placeholder="WhatsApp" value={customer.phone} onChange={e => setCustomer({...customer, phone: e.target.value})} className="w-full border rounded-lg p-2.5 text-sm" />
+            </div>
 
-      {/* --- Botón Flotante de Voz AI con Indicador de Uso --- */}
-      <div className="fixed bottom-32 right-6 z-[60] flex items-center gap-3">
-        {!isVoiceActive && (
-          <div className="bg-[#005f6b] text-white py-3 px-5 rounded-2xl shadow-xl animate-bounce border border-white/20">
-            <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">¡Usa tu voz para cotizar! ✨</span>
-            <div className="absolute top-1/2 -right-2 w-4 h-4 bg-[#005f6b] rotate-45 -translate-y-1/2 -z-10 border-r border-t border-white/20"></div>
-          </div>
-        )}
-        
-        <button 
-          onClick={startVoiceAssistant}
-          className={`w-18 h-18 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 active:scale-90 relative ${isVoiceActive ? 'bg-red-500 scale-110' : 'bg-gradient-to-tr from-[#005f6b] to-[#018a9c] p-1'}`}
-          style={{ width: '4.5rem', height: '4.5rem' }}
-        >
-          {!isVoiceActive && (
-            <div className="absolute inset-0 rounded-full border-2 border-white/30 animate-[ping_3s_infinite] opacity-50"></div>
-          )}
-          
-          <div className={`w-full h-full rounded-full flex items-center justify-center ${isVoiceActive ? 'bg-transparent' : 'bg-[#004d57]'}`}>
-            {isVoiceActive && (
-              <span className="absolute inset-0 rounded-full bg-red-500 animate-pulse opacity-25"></span>
-            )}
-            <svg className={`w-8 h-8 text-white ${isVoiceActive ? 'animate-pulse scale-110' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-            </svg>
-          </div>
-
-          {isVoiceActive && (
-             <div className="absolute -top-14 right-0 bg-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-100 whitespace-nowrap">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
-                  <span className="text-[10px] font-black text-[#005f6b] uppercase tracking-widest">IA Escuchando...</span>
+            <div className="bg-gray-900 text-white rounded-2xl shadow-xl p-6 space-y-4">
+              <h3 className="font-bold text-lg">Resumen</h3>
+              <div className="space-y-3 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
+                {calculation.items.length === 0 ? (
+                  <p className="text-gray-500 text-sm italic">Agrega productos para cotizar...</p>
+                ) : (
+                  calculation.items.map((it, idx) => (
+                    <div key={idx} className="flex justify-between text-xs border-b border-gray-800 pb-2">
+                      <span className="flex-1 pr-2">{it.label} (x{it.qty})</span>
+                      <span className="font-mono text-indigo-400">${it.sub.toFixed(2)}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+              
+              <div className="pt-4 border-t border-gray-800">
+                <div className="flex justify-between items-end mb-6">
+                  <span className="text-sm text-gray-400">Total</span>
+                  <span className="text-3xl font-bold text-white">${calculation.total.toFixed(2)}</span>
                 </div>
-             </div>
-          )}
-        </button>
+                
+                <button 
+                  onClick={handleWhatsApp}
+                  disabled={calculation.total === 0}
+                  className="w-full bg-green-500 hover:bg-green-600 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-900/20"
+                >
+                  Confirmar WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-
-      <div className="fixed bottom-0 left-0 right-0 p-6 md:p-8 bg-white/95 backdrop-blur-xl border-t border-slate-100 z-50">
-        <button 
-          onClick={sendWhatsApp} 
-          disabled={!customer.name || !customer.phone || calculation.total === 0} 
-          className="w-full max-w-lg mx-auto h-16 md:h-18 rounded-[2rem] bg-[#005f6b] text-white font-black text-[11px] letter-spacing-widest uppercase shadow-2xl shadow-[#005f6b]/30 active:scale-95 disabled:opacity-20 transition-all flex items-center justify-center gap-4"
-        >
-          ENVIAR POR WHATSAPP
-        </button>
-      </div>
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #374151; border-radius: 10px; }
+      `}</style>
     </div>
   );
 }
