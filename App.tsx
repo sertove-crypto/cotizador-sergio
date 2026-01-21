@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
+import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
 import { FabricGroup, FoamType } from './types';
 import { 
   FOAM_MULTIPLIERS, 
@@ -11,16 +12,48 @@ import {
   BUSINESS_WHATSAPP
 } from './constants';
 
+// --- Utilidades de Audio para Live API ---
+function decodeBase64(base64: string) {
+  const binaryString = atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function encodeBase64(bytes: Uint8Array) {
+  let binary = '';
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: number, numChannels: number): Promise<AudioBuffer> {
+  const dataInt16 = new Int16Array(data.buffer);
+  const frameCount = dataInt16.length / numChannels;
+  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
+    }
+  }
+  return buffer;
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('mueble');
   const [customer, setCustomer] = useState({ name: '', phone: '' });
-  
-  // Estados de productos - Iniciando con 1 fila por defecto para móvil
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+
+  // Estados de productos
   const [cushions, setCushions] = useState(() => [{ w: 45, h: 45, qty: 0 }]);
   const [seats, setSeats] = useState(() => [{ w: 50, h: 50, t: 10, qty: 0 }]);
   const [backrests, setBackrests] = useState(() => [{ w: 50, h: 40, t: 8, qty: 0 }]);
-  
-  // Estados Colchonetas
   const [mattresses, setMattresses] = useState(() => STANDARD_MATTRESS_PRICES.map(m => ({ ...m, qty: 0 })));
 
   // Estados de configuración
@@ -28,10 +61,16 @@ export default function App() {
   const [furnitureFoamType, setFurnitureFoamType] = useState<FoamType>(FoamType.STANDARD);
   const [furnitureFabricGroup, setFurnitureFabricGroup] = useState<FabricGroup>(FabricGroup.A);
 
+  // Referencias para Live API
+  const sessionRef = useRef<any>(null);
+  const audioContextRef = useRef<{ input: AudioContext; output: AudioContext } | null>(null);
+  const nextStartTimeRef = useRef(0);
+  const activeSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+
   const addRow = (type: 'cushion' | 'seat' | 'backrest') => {
-    if (type === 'cushion') setCushions([...cushions, { w: 45, h: 45, qty: 0 }]);
-    if (type === 'seat') setSeats([...seats, { w: 50, h: 50, t: 10, qty: 0 }]);
-    if (type === 'backrest') setBackrests([...backrests, { w: 50, h: 40, t: 8, qty: 0 }]);
+    if (type === 'cushion') setCushions(prev => [...prev, { w: 45, h: 45, qty: 0 }]);
+    if (type === 'seat') setSeats(prev => [...prev, { w: 50, h: 50, t: 10, qty: 0 }]);
+    if (type === 'backrest') setBackrests(prev => [...prev, { w: 50, h: 40, t: 8, qty: 0 }]);
   };
 
   const calculation = useMemo(() => {
@@ -73,6 +112,182 @@ export default function App() {
 
     return { items, total: grandTotal };
   }, [cushions, seats, backrests, mattresses, cushionsFabricGroup, furnitureFoamType, furnitureFabricGroup]);
+
+  // --- Lógica de Voz (Gemini Live API) ---
+  const startVoiceAssistant = async () => {
+    if (isVoiceActive) {
+      stopVoiceAssistant();
+      return;
+    }
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error("Tu navegador no soporta entrada de audio.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      if (!audioContextRef.current) {
+        audioContextRef.current = {
+          input: new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 }),
+          output: new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 }),
+        };
+      }
+
+      if (audioContextRef.current.input.state === 'suspended') await audioContextRef.current.input.resume();
+      if (audioContextRef.current.output.state === 'suspended') await audioContextRef.current.output.resume();
+
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      
+      const sessionPromise = ai.live.connect({
+        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+        callbacks: {
+          onopen: () => {
+            setIsVoiceActive(true);
+            const source = audioContextRef.current!.input.createMediaStreamSource(stream);
+            const scriptProcessor = audioContextRef.current!.input.createScriptProcessor(4096, 1, 1);
+            
+            scriptProcessor.onaudioprocess = (e) => {
+              const inputData = e.inputBuffer.getChannelData(0);
+              const int16 = new Int16Array(inputData.length);
+              for (let i = 0; i < inputData.length; i++) int16[i] = inputData[i] * 32768;
+              
+              sessionPromise.then(session => {
+                session.sendRealtimeInput({
+                  media: { data: encodeBase64(new Uint8Array(int16.buffer)), mimeType: 'audio/pcm;rate=16000' }
+                });
+              });
+            };
+            
+            source.connect(scriptProcessor);
+            scriptProcessor.connect(audioContextRef.current!.input.destination);
+          },
+          onmessage: async (msg: LiveServerMessage) => {
+            const base64Audio = msg.serverContent?.modelTurn?.parts[0]?.inlineData?.data;
+            if (base64Audio) {
+              const outCtx = audioContextRef.current!.output;
+              nextStartTimeRef.current = Math.max(nextStartTimeRef.current, outCtx.currentTime);
+              const buffer = await decodeAudioData(decodeBase64(base64Audio), outCtx, 24000, 1);
+              const source = outCtx.createBufferSource();
+              source.buffer = buffer;
+              source.connect(outCtx.destination);
+              source.start(nextStartTimeRef.current);
+              nextStartTimeRef.current += buffer.duration;
+              activeSourcesRef.current.add(source);
+              source.onended = () => activeSourcesRef.current.delete(source);
+            }
+
+            if (msg.serverContent?.interrupted) {
+              activeSourcesRef.current.forEach(s => { try { s.stop(); } catch(e){} });
+              activeSourcesRef.current.clear();
+              nextStartTimeRef.current = 0;
+            }
+
+            if (msg.toolCall) {
+              for (const fc of msg.toolCall.functionCalls) {
+                let result = "ok";
+                switch (fc.name) {
+                  case 'updateTab':
+                    if (['cojin', 'mueble', 'colchoneta'].includes(fc.args.tab as string)) setActiveTab(fc.args.tab as string);
+                    break;
+                  case 'updateCushion':
+                    setCushions(prev => {
+                      const n = [...prev];
+                      const idx = (fc.args.index as number) || 0;
+                      if (!n[idx]) n[idx] = { w: 0, h: 0, qty: 0 };
+                      if (fc.args.w) n[idx].w = Number(fc.args.w);
+                      if (fc.args.h) n[idx].h = Number(fc.args.h);
+                      if (fc.args.qty !== undefined) n[idx].qty = Number(fc.args.qty);
+                      return n;
+                    });
+                    break;
+                  case 'updateFurniture':
+                    const listSetter = fc.args.type === 'asiento' ? setSeats : setBackrests;
+                    listSetter(prev => {
+                      const n = [...prev];
+                      const idx = (fc.args.index as number) || 0;
+                      if (!n[idx]) n[idx] = { w: 0, h: 0, t: 0, qty: 0 };
+                      if (fc.args.w) n[idx].w = Number(fc.args.w);
+                      if (fc.args.h) n[idx].h = Number(fc.args.h);
+                      if (fc.args.t) n[idx].t = Number(fc.args.t);
+                      if (fc.args.qty !== undefined) n[idx].qty = Number(fc.args.qty);
+                      return n;
+                    });
+                    break;
+                  case 'setCustomerInfo':
+                    setCustomer(prev => ({
+                      name: (fc.args.name as string) || prev.name,
+                      phone: (fc.args.phone as string) || prev.phone
+                    }));
+                    break;
+                  case 'setOptions':
+                    if (fc.args.target === 'cojin') {
+                      setCushionsFabricGroup(fc.args.fabricGroup === 'B' ? FabricGroup.B : FabricGroup.A);
+                    } else {
+                      if (fc.args.fabricGroup) setFurnitureFabricGroup(fc.args.fabricGroup === 'B' ? FabricGroup.B : FabricGroup.A);
+                      if (fc.args.foam) {
+                        const f = fc.args.foam as string;
+                        if (f.includes('Premium')) setFurnitureFoamType(FoamType.PREMIUM);
+                        else if (f.includes('Básica')) setFurnitureFoamType(FoamType.ECONOMY);
+                        else setFurnitureFoamType(FoamType.STANDARD);
+                      }
+                    }
+                    break;
+                }
+                sessionPromise.then(s => s.sendToolResponse({
+                  functionResponses: { id: fc.id, name: fc.name, response: { result } }
+                }));
+              }
+            }
+          },
+          onclose: () => setIsVoiceActive(false),
+          onerror: (e) => {
+            console.error("Error en Live API:", e);
+            setIsVoiceActive(false);
+          },
+        },
+        config: {
+          responseModalities: [Modality.AUDIO],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
+          systemInstruction: `Eres el asistente de voz de "Cojines Sergio". Tu misión es ayudar al cliente a completar su cotización.
+          Pestañas: 'cojin', 'mueble' (asientos/espaldares), 'colchoneta'.
+          Acciones:
+          - updateCushion: Medidas y cantidad de cojines decorativos.
+          - updateFurniture: Medidas (Largo, Ancho, Espesor) y cantidad de asientos o espaldares.
+          - setCustomerInfo: Nombre y teléfono del cliente.
+          - setOptions: Cambiar tipo de tela o espuma.
+          Sé breve y amable. Pregunta medidas que falten de forma natural.`,
+          tools: [{
+            functionDeclarations: [
+              { name: 'updateTab', parameters: { type: 'OBJECT', properties: { tab: { type: 'STRING' } } } },
+              { name: 'updateCushion', parameters: { type: 'OBJECT', properties: { index: { type: 'NUMBER' }, w: { type: 'NUMBER' }, h: { type: 'NUMBER' }, qty: { type: 'NUMBER' } } } },
+              { name: 'updateFurniture', parameters: { type: 'OBJECT', properties: { type: { type: 'STRING', enum: ['asiento', 'espaldar'] }, index: { type: 'NUMBER' }, w: { type: 'NUMBER' }, h: { type: 'NUMBER' }, t: { type: 'NUMBER' }, qty: { type: 'NUMBER' } } } },
+              { name: 'setCustomerInfo', parameters: { type: 'OBJECT', properties: { name: { type: 'STRING' }, phone: { type: 'STRING' } } } },
+              { name: 'setOptions', parameters: { type: 'OBJECT', properties: { target: { type: 'STRING', enum: ['cojin', 'furniture'] }, fabricGroup: { type: 'STRING' }, foam: { type: 'STRING' } } } }
+            ]
+          }]
+        }
+      });
+
+      sessionRef.current = await sessionPromise;
+    } catch (err: any) {
+      console.error("Error iniciando voz:", err);
+      setIsVoiceActive(false);
+      if (err.name === 'NotAllowedError' || err.message.includes('Permission denied')) {
+        alert("El acceso al micrófono fue denegado. Por favor, actívalo en la configuración de tu navegador para usar el asistente de voz.");
+      } else {
+        alert("No se pudo iniciar el asistente: " + err.message);
+      }
+    }
+  };
+
+  const stopVoiceAssistant = () => {
+    if (sessionRef.current) {
+      sessionRef.current.close();
+      sessionRef.current = null;
+    }
+    setIsVoiceActive(false);
+  };
 
   const sendWhatsApp = () => {
     if (!customer.name || !customer.phone) return alert("Por favor ingresa tu nombre y número de teléfono");
@@ -353,6 +568,44 @@ export default function App() {
           </div>
         </section>
       </main>
+
+      {/* --- Botón Flotante de Voz AI con Indicador de Uso --- */}
+      <div className="fixed bottom-32 right-6 z-[60] flex items-center gap-3">
+        {!isVoiceActive && (
+          <div className="bg-[#005f6b] text-white py-3 px-5 rounded-2xl shadow-xl animate-bounce border border-white/20">
+            <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">¡Usa tu voz para cotizar! ✨</span>
+            <div className="absolute top-1/2 -right-2 w-4 h-4 bg-[#005f6b] rotate-45 -translate-y-1/2 -z-10 border-r border-t border-white/20"></div>
+          </div>
+        )}
+        
+        <button 
+          onClick={startVoiceAssistant}
+          className={`w-18 h-18 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 active:scale-90 relative ${isVoiceActive ? 'bg-red-500 scale-110' : 'bg-gradient-to-tr from-[#005f6b] to-[#018a9c] p-1'}`}
+          style={{ width: '4.5rem', height: '4.5rem' }}
+        >
+          {!isVoiceActive && (
+            <div className="absolute inset-0 rounded-full border-2 border-white/30 animate-[ping_3s_infinite] opacity-50"></div>
+          )}
+          
+          <div className={`w-full h-full rounded-full flex items-center justify-center ${isVoiceActive ? 'bg-transparent' : 'bg-[#004d57]'}`}>
+            {isVoiceActive && (
+              <span className="absolute inset-0 rounded-full bg-red-500 animate-pulse opacity-25"></span>
+            )}
+            <svg className={`w-8 h-8 text-white ${isVoiceActive ? 'animate-pulse scale-110' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </div>
+
+          {isVoiceActive && (
+             <div className="absolute -top-14 right-0 bg-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-100 whitespace-nowrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+                  <span className="text-[10px] font-black text-[#005f6b] uppercase tracking-widest">IA Escuchando...</span>
+                </div>
+             </div>
+          )}
+        </button>
+      </div>
 
       <div className="fixed bottom-0 left-0 right-0 p-6 md:p-8 bg-white/95 backdrop-blur-xl border-t border-slate-100 z-50">
         <button 

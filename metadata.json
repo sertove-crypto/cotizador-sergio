@@ -1,5 +1,7 @@
 {
   "name": "Cojines y accesorios para el hogar",
   "description": "Cotizador profesional en tiempo real para cojines, asientos y espaldares con integración de WhatsApp.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "microphone"
+  ]
 }
