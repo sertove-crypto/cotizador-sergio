@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { FabricGroup, FoamType } from './types';
