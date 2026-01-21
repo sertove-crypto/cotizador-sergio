@@ -1,5 +1,7 @@
+
 import React, { useState, useMemo, useRef } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
+// Import Type enum to fix literal type assignment errors
+import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { FabricGroup, FoamType } from './types';
 import { 
   FOAM_MULTIPLIERS, 
@@ -259,11 +261,12 @@ export default function App() {
           Sé breve y amable. Pregunta medidas que falten de forma natural.`,
           tools: [{
             functionDeclarations: [
-              { name: 'updateTab', parameters: { type: 'OBJECT', properties: { tab: { type: 'STRING' } } } },
-              { name: 'updateCushion', parameters: { type: 'OBJECT', properties: { index: { type: 'NUMBER' }, w: { type: 'NUMBER' }, h: { type: 'NUMBER' }, qty: { type: 'NUMBER' } } } },
-              { name: 'updateFurniture', parameters: { type: 'OBJECT', properties: { type: { type: 'STRING', enum: ['asiento', 'espaldar'] }, index: { type: 'NUMBER' }, w: { type: 'NUMBER' }, h: { type: 'NUMBER' }, t: { type: 'NUMBER' }, qty: { type: 'NUMBER' } } } },
-              { name: 'setCustomerInfo', parameters: { type: 'OBJECT', properties: { name: { type: 'STRING' }, phone: { type: 'STRING' } } } },
-              { name: 'setOptions', parameters: { type: 'OBJECT', properties: { target: { type: 'STRING', enum: ['cojin', 'furniture'] }, fabricGroup: { type: 'STRING' }, foam: { type: 'STRING' } } } }
+              // Use Type enum from @google/genai to fix parameter type errors
+              { name: 'updateTab', parameters: { type: Type.OBJECT, properties: { tab: { type: Type.STRING } } } },
+              { name: 'updateCushion', parameters: { type: Type.OBJECT, properties: { index: { type: Type.NUMBER }, w: { type: Type.NUMBER }, h: { type: Type.NUMBER }, qty: { type: Type.NUMBER } } } },
+              { name: 'updateFurniture', parameters: { type: Type.OBJECT, properties: { type: { type: Type.STRING, enum: ['asiento', 'espaldar'] }, index: { type: Type.NUMBER }, w: { type: Type.NUMBER }, h: { type: Type.NUMBER }, t: { type: Type.NUMBER }, qty: { type: Type.NUMBER } } } },
+              { name: 'setCustomerInfo', parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, phone: { type: Type.STRING } } } },
+              { name: 'setOptions', parameters: { type: Type.OBJECT, properties: { target: { type: Type.STRING, enum: ['cojin', 'furniture'] }, fabricGroup: { type: Type.STRING }, foam: { type: Type.STRING } } } }
             ]
           }]
         }

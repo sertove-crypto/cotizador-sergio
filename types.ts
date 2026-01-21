@@ -1,3 +1,4 @@
+
 export enum ProductType {
   CUSHION = 'Cojín decorativo',
   SEAT = 'Asiento',
