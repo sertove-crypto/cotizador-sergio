@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { GoogleGenAI, LiveServerMessage, Modality } from '@google/genai';
+import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
 import { FabricGroup, FoamType } from './types';
 import { 
   FOAM_MULTIPLIERS, 
@@ -122,14 +122,12 @@ export default function App() {
     }
 
     try {
-      // 1. Solicitar micrófono INMEDIATAMENTE al hacer clic (crucial para evitar Permission Denied)
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error("Tu navegador no soporta entrada de audio.");
       }
 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      // 2. Inicializar AudioContexts
       if (!audioContextRef.current) {
         audioContextRef.current = {
           input: new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 }),
@@ -137,7 +135,6 @@ export default function App() {
         };
       }
 
-      // Asegurar que los contextos estén activos (necesario en móviles)
       if (audioContextRef.current.input.state === 'suspended') await audioContextRef.current.input.resume();
       if (audioContextRef.current.output.state === 'suspended') await audioContextRef.current.output.resume();
 
@@ -263,11 +260,12 @@ export default function App() {
           Sé breve y amable. Pregunta medidas que falten de forma natural.`,
           tools: [{
             functionDeclarations: [
-              { name: 'updateTab', parameters: { type: 'OBJECT', properties: { tab: { type: 'STRING' } } } },
-              { name: 'updateCushion', parameters: { type: 'OBJECT', properties: { index: { type: 'NUMBER' }, w: { type: 'NUMBER' }, h: { type: 'NUMBER' }, qty: { type: 'NUMBER' } } } },
-              { name: 'updateFurniture', parameters: { type: 'OBJECT', properties: { type: { type: 'STRING', enum: ['asiento', 'espaldar'] }, index: { type: 'NUMBER' }, w: { type: 'NUMBER' }, h: { type: 'NUMBER' }, t: { type: 'NUMBER' }, qty: { type: 'NUMBER' } } } },
-              { name: 'setCustomerInfo', parameters: { type: 'OBJECT', properties: { name: { type: 'STRING' }, phone: { type: 'STRING' } } } },
-              { name: 'setOptions', parameters: { type: 'OBJECT', properties: { target: { type: 'STRING', enum: ['cojin', 'furniture'] }, fabricGroup: { type: 'STRING' }, foam: { type: 'STRING' } } } }
+              // Fix parameter type definitions using the Type enum instead of strings.
+              { name: 'updateTab', parameters: { type: Type.OBJECT, properties: { tab: { type: Type.STRING } } } },
+              { name: 'updateCushion', parameters: { type: Type.OBJECT, properties: { index: { type: Type.NUMBER }, w: { type: Type.NUMBER }, h: { type: Type.NUMBER }, qty: { type: Type.NUMBER } } } },
+              { name: 'updateFurniture', parameters: { type: Type.OBJECT, properties: { type: { type: Type.STRING, enum: ['asiento', 'espaldar'] }, index: { type: Type.NUMBER }, w: { type: Type.NUMBER }, h: { type: Type.NUMBER }, t: { type: Type.NUMBER }, qty: { type: Type.NUMBER } } } },
+              { name: 'setCustomerInfo', parameters: { type: Type.OBJECT, properties: { name: { type: Type.STRING }, phone: { type: Type.STRING } } } },
+              { name: 'setOptions', parameters: { type: Type.OBJECT, properties: { target: { type: Type.STRING, enum: ['cojin', 'furniture'] }, fabricGroup: { type: Type.STRING }, foam: { type: Type.STRING } } } }
             ]
           }]
         }
@@ -573,21 +571,39 @@ export default function App() {
         </section>
       </main>
 
-      {/* --- Botón Flotante de Voz AI --- */}
-      <div className="fixed bottom-32 right-6 z-[60]">
+      {/* --- Botón Flotante de Voz AI con Indicador de Uso --- */}
+      <div className="fixed bottom-32 right-6 z-[60] flex items-center gap-3">
+        {!isVoiceActive && (
+          <div className="bg-[#005f6b] text-white py-3 px-5 rounded-2xl shadow-xl animate-bounce border border-white/20">
+            <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">¡Usa tu voz para cotizar! ✨</span>
+            <div className="absolute top-1/2 -right-2 w-4 h-4 bg-[#005f6b] rotate-45 -translate-y-1/2 -z-10 border-r border-t border-white/20"></div>
+          </div>
+        )}
+        
         <button 
           onClick={startVoiceAssistant}
-          className={`w-16 h-16 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 active:scale-90 relative ${isVoiceActive ? 'bg-red-500 scale-110' : 'bg-gradient-to-tr from-[#005f6b] to-[#80d8e4]'}`}
+          className={`w-18 h-18 rounded-full flex items-center justify-center shadow-2xl transition-all duration-500 active:scale-90 relative ${isVoiceActive ? 'bg-red-500 scale-110' : 'bg-gradient-to-tr from-[#005f6b] to-[#018a9c] p-1'}`}
+          style={{ width: '4.5rem', height: '4.5rem' }}
         >
-          {isVoiceActive && (
-            <span className="absolute inset-0 rounded-full bg-red-500 animate-ping opacity-25"></span>
+          {!isVoiceActive && (
+            <div className="absolute inset-0 rounded-full border-2 border-white/30 animate-[ping_3s_infinite] opacity-50"></div>
           )}
-          <svg className={`w-8 h-8 text-white ${isVoiceActive ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-          </svg>
+          
+          <div className={`w-full h-full rounded-full flex items-center justify-center ${isVoiceActive ? 'bg-transparent' : 'bg-[#004d57]'}`}>
+            {isVoiceActive && (
+              <span className="absolute inset-0 rounded-full bg-red-500 animate-pulse opacity-25"></span>
+            )}
+            <svg className={`w-8 h-8 text-white ${isVoiceActive ? 'animate-pulse scale-110' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          </div>
+
           {isVoiceActive && (
-             <div className="absolute -top-12 right-0 bg-white px-4 py-2 rounded-2xl shadow-lg border border-slate-100 whitespace-nowrap">
-                <span className="text-[10px] font-black text-[#005f6b] animate-pulse uppercase tracking-widest">Escuchando...</span>
+             <div className="absolute -top-14 right-0 bg-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-100 whitespace-nowrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-ping"></div>
+                  <span className="text-[10px] font-black text-[#005f6b] uppercase tracking-widest">IA Escuchando...</span>
+                </div>
              </div>
           )}
         </button>
