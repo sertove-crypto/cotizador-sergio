@@ -25,11 +25,6 @@ export const STANDARD_MATTRESS_PRICES = [
   { w: 200, h: 140, t: 20, unit: 210 }
 ];
 
-/**
- * Factor para colchonetas a medida (Por mayor >= 4 unidades)
- */
-export const MATTRESS_WHOLESALE_FACTOR = 0.0005;
-
 export const FOAM_MULTIPLIERS = {
   [FoamType.ECONOMY]: 0.85,
   [FoamType.STANDARD]: 1.00,
