@@ -83,7 +83,7 @@ export default function App() {
   }, []);
 
   const performReset = () => {
-    // Forzamos el reset de todas las cantidades a 0 y limpiamos campos adicionales
+    // Resetear absolutamente todos los estados y cantidades a cero
     setCushions([{ w: 45, h: 45, qty: 0 }]);
     setSeats([{ w: 50, h: 50, t: 10, qty: 0 }]);
     setBackrests([{ w: 50, h: 40, t: 8, qty: 0 }]);
@@ -325,7 +325,7 @@ export default function App() {
                       </div>
                       <div className="w-20">
                         <p className="text-[8px] font-bold text-slate-400 mb-1 ml-1">Cant</p>
-                        <input type="number" value={it.qty === 0 ? '' : it.qty} placeholder="Cant" onChange={e=>{let n=[...cushions]; n[i].qty=+e.target.value; setCushions(n)}} className="w-full h-14 bg-white border border-slate-200 rounded-2xl p-3 font-black text-[#005f6b] text-center text-lg focus:border-[#005f6b] outline-none transition-all" />
+                        <input type="number" value={it.qty === 0 ? '' : it.qty} placeholder="0" onChange={e=>{let n=[...cushions]; n[i].qty=+e.target.value; setCushions(n)}} className="w-full h-14 bg-white border border-slate-200 rounded-2xl p-3 font-black text-[#005f6b] text-center text-lg focus:border-[#005f6b] outline-none transition-all" />
                       </div>
                     </div>
                   </div>
@@ -338,7 +338,6 @@ export default function App() {
           {/* SECCIÓN MUEBLES */}
           {activeTab === 'mueble' && (
             <div className="space-y-10">
-              {/* Materiales para Muebles */}
               <div className="space-y-6 bg-slate-50/50 p-4 rounded-3xl border border-slate-100">
                 <div className="space-y-3">
                   <p className="text-[10px] font-black text-[#005f6b]/60 uppercase tracking-widest px-1">Tipo de Espuma</p>
@@ -426,7 +425,7 @@ export default function App() {
           )}
         </section>
 
-        {/* RESUMEN DE PRESUPUESTO DETALLADO */}
+        {/* RESUMEN DE PRESUPUESTO - DETALLE UNIFICADO */}
         <section className="bg-[#005f6b] rounded-[2.5rem] p-8 text-white shadow-2xl mx-2 mb-12 relative overflow-hidden group">
           <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-700"></div>
           
@@ -444,7 +443,7 @@ export default function App() {
                 ))}
               </ul>
             ) : (
-              <p className="text-[11px] font-medium opacity-50 italic">No hay productos seleccionados...</p>
+              <p className="text-[11px] font-medium opacity-50 italic">Selecciona medidas y cantidades para ver el resumen...</p>
             )}
           </div>
 
