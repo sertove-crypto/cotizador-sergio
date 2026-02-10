@@ -8,8 +8,3 @@ export enum FoamType {
   STANDARD = 'Estándar',
   PREMIUM = 'Premium'
 }
-
-export interface Fabric {
-  name: string;
-  image: string;
-}

@@ -1,6 +1,5 @@
 {
-  "name": "Cojines Sergio - Cotizador Pro",
-  "description": "Herramienta de cotización profesional para tapicería con asistente de voz Gemini.",
+  "name": "Cojines Sergio",
   "requestFramePermissions": [
     "microphone"
   ]
