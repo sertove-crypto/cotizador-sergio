@@ -47,9 +47,6 @@ async function decodeAudioData(data: Uint8Array, ctx: AudioContext, sampleRate: 
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('mueble');
-  const [customer, setCustomer] = useState({ name: '', phone: '' });
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [micStatus, setMicStatus] = useState<'prompt' | 'granted' | 'denied'>('prompt');
   const [isConfirmingReset, setIsConfirmingReset] = useState(false);
 
   // Estados de productos
@@ -63,27 +60,12 @@ export default function App() {
   const [furnitureFoamType, setFurnitureFoamType] = useState<FoamType>(FoamType.STANDARD);
   const [furnitureFabricGroup, setFurnitureFabricGroup] = useState<FabricGroup>(FabricGroup.A);
 
-  const sessionRef = useRef<any>(null);
-  const audioContextRef = useRef<{ input: AudioContext; output: AudioContext } | null>(null);
-  const nextStartTimeRef = useRef(0);
-  const micStreamRef = useRef<MediaStream | null>(null);
-
-  useEffect(() => {
-    if (navigator.permissions && navigator.permissions.query) {
-      navigator.permissions.query({ name: 'microphone' as PermissionName }).then((result) => {
-        setMicStatus(result.state as any);
-        result.onchange = () => setMicStatus(result.state as any);
-      });
-    }
-  }, []);
-
   const performReset = () => {
     // Forzamos el reset de todos los arreglos a sus valores iniciales con qty: 0
     setCushions([{ w: 45, h: 45, qty: 0 }]);
     setSeats([{ w: 50, h: 50, t: 10, qty: 0 }]);
     setBackrests([{ w: 50, h: 40, t: 8, qty: 0 }]);
     setMattresses(STANDARD_MATTRESS_PRICES.map(m => ({ ...m, qty: 0 })));
-    setCustomer({ name: '', phone: '' });
     setCushionsFabricGroup(FabricGroup.A);
     setFurnitureFoamType(FoamType.STANDARD);
     setFurnitureFabricGroup(FabricGroup.A);
@@ -115,7 +97,7 @@ export default function App() {
         let base = CUSHION_BASE_FACTOR + (area * CUSHION_AREA_FACTOR);
         if (it.w >= 50 && it.h >= 50) base = Math.max(base, 10.00);
         let unit = cushionsFabricGroup === FabricGroup.B ? base + CUSHION_PREMIUM_SURCHARGE : base;
-        items.push({ label: `Cojín ${it.w}x${it.h}`, qty: it.qty, sub: unit * it.qty });
+        items.push({ label: `Cojín ${it.w}x${it.h} (${cushionsFabricGroup === FabricGroup.A ? 'Estándar' : 'Premium'})`, qty: it.qty, sub: unit * it.qty });
         grandTotal += unit * it.qty;
       }
     });
@@ -125,7 +107,7 @@ export default function App() {
         let vol = it.w * it.h * it.t;
         let base = (vol * FURNITURE_VOLUME_FACTOR) * FOAM_MULTIPLIERS[furnitureFoamType];
         let unit = base + (furnitureFabricGroup === FabricGroup.B ? FURNITURE_PREMIUM_FABRIC_ADD : 0);
-        items.push({ label: `Asiento ${it.w}x${it.h}x${it.t}`, qty: it.qty, sub: unit * it.qty });
+        items.push({ label: `Asiento ${it.w}x${it.h}x${it.t} (${furnitureFoamType}/${furnitureFabricGroup === FabricGroup.A ? 'Estándar' : 'Premium'})`, qty: it.qty, sub: unit * it.qty });
         grandTotal += unit * it.qty;
       }
     });
@@ -135,7 +117,7 @@ export default function App() {
         let vol = it.w * it.h * it.t;
         let base = (vol * FURNITURE_VOLUME_FACTOR) * FOAM_MULTIPLIERS[furnitureFoamType];
         let unit = base + (furnitureFabricGroup === FabricGroup.B ? FURNITURE_PREMIUM_FABRIC_ADD : 0);
-        items.push({ label: `Espaldar ${it.w}x${it.h}x${it.t}`, qty: it.qty, sub: unit * it.qty });
+        items.push({ label: `Espaldar ${it.w}x${it.h}x${it.t} (${furnitureFoamType}/${furnitureFabricGroup === FabricGroup.A ? 'Estándar' : 'Premium'})`, qty: it.qty, sub: unit * it.qty });
         grandTotal += unit * it.qty;
       }
     });
@@ -160,7 +142,7 @@ export default function App() {
     <div className="min-h-screen pb-40">
       <header className="px-8 pt-10 pb-12 flex flex-col items-center">
         <h1 className="text-[28px] font-extrabold text-white drop-shadow-xl text-center">Cojines Sergio</h1>
-        <p className="text-[10px] font-bold text-white/70 tracking-widest uppercase mt-1">Cotizador Pro</p>
+        <p className="text-[10px] font-bold text-white/70 tracking-widest uppercase mt-1">Taller de Tapicería</p>
       </header>
 
       <main className="max-w-xl mx-auto px-4">
@@ -173,7 +155,7 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Botón de Limpiar con Doble Confirmación */}
+        {/* Botón de Limpiar */}
         <div className="flex justify-end mb-6 px-1">
           <button 
             type="button"
@@ -187,13 +169,20 @@ export default function App() {
           </button>
         </div>
 
-        {/* Contenido Dinámico */}
         <section className="glass-card rounded-[2.5rem] p-6 shadow-2xl mb-10">
           
           {/* COJINES */}
           {activeTab === 'cojin' && (
             <div className="space-y-6">
-              <h3 className="text-[11px] font-black text-[#005f6b] uppercase tracking-widest px-1">Cojines de Adorno</h3>
+              <div className="bg-slate-50 p-4 rounded-[2rem] border border-slate-100 mb-4">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2 text-center">Seleccionar Tipo de Tela</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setCushionsFabricGroup(FabricGroup.A)} className={`flex-1 py-3 rounded-2xl text-[10px] font-black transition-all ${cushionsFabricGroup === FabricGroup.A ? 'bg-[#005f6b] text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}`}>ESTÁNDAR</button>
+                  <button onClick={() => setCushionsFabricGroup(FabricGroup.B)} className={`flex-1 py-3 rounded-2xl text-[10px] font-black transition-all ${cushionsFabricGroup === FabricGroup.B ? 'bg-[#005f6b] text-white shadow-lg' : 'bg-white text-slate-400 border border-slate-200'}`}>PREMIUM</button>
+                </div>
+              </div>
+
+              <h3 className="text-[11px] font-black text-[#005f6b] uppercase tracking-widest px-1">Medidas de Cojines</h3>
               {cushions.map((it, i) => (
                 <div key={i} className={`p-4 rounded-3xl border transition-all ${it.qty > 0 ? 'bg-[#E0F7F9] border-[#80d8e4]' : 'bg-white border-slate-100'}`}>
                   <div className="flex gap-2">
@@ -210,6 +199,27 @@ export default function App() {
           {/* MUEBLES: ASIENTOS Y ESPALDARES */}
           {activeTab === 'mueble' && (
             <div className="space-y-10">
+              {/* Selectores de Calidad Muebles */}
+              <div className="grid grid-cols-1 gap-4 mb-4">
+                <div className="bg-slate-50 p-4 rounded-[2rem] border border-slate-100">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2 text-center">Calidad de Esponja</p>
+                  <div className="flex gap-1.5">
+                    {[FoamType.ECONOMY, FoamType.STANDARD, FoamType.PREMIUM].map((type) => (
+                      <button key={type} onClick={() => setFurnitureFoamType(type)} className={`flex-1 py-3 rounded-xl text-[8px] font-black transition-all ${furnitureFoamType === type ? 'bg-[#005f6b] text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200'}`}>
+                        {type.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-4 rounded-[2rem] border border-slate-100">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3 ml-2 text-center">Calidad de Tela</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => setFurnitureFabricGroup(FabricGroup.A)} className={`flex-1 py-3 rounded-xl text-[9px] font-black transition-all ${furnitureFabricGroup === FabricGroup.A ? 'bg-[#005f6b] text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200'}`}>ESTÁNDAR</button>
+                    <button onClick={() => setFurnitureFabricGroup(FabricGroup.B)} className={`flex-1 py-3 rounded-xl text-[9px] font-black transition-all ${furnitureFabricGroup === FabricGroup.B ? 'bg-[#005f6b] text-white shadow-md' : 'bg-white text-slate-400 border border-slate-200'}`}>PREMIUM</button>
+                  </div>
+                </div>
+              </div>
+
               {/* Asientos */}
               <div className="space-y-6">
                 <h3 className="text-[11px] font-black text-[#005f6b] uppercase tracking-widest px-1">Asientos</h3>
